@@ -1,0 +1,316 @@
+{
+ "dns": {
+  "enable": true,
+  "ipv6": true,
+  "use-hosts": true,
+  "cache-algorithm": "arc",
+  "prefer-h3": false,
+  "use-system-hosts": true,
+  "enhanced-mode": "fake-ip",
+  "fake-ip-range": "198.18.0.1/15",
+  "fake-ip-range6": "2001:2::1/48",
+  "fake-ip-filter": [
+   "rule-set:private",
+   "rule-set:fakeip_filter",
+   "rule-set:geolocation-cn"
+  ],
+  "default-nameserver": [
+   "tls://223.5.5.5#DIRECT",
+   "https://1.12.12.12/dns-query#DIRECT"
+  ],
+  "proxy-server-nameserver": [
+   "tls://223.5.5.5#DIRECT",
+   "https://doh.pub/dns-query#DIRECT"
+  ],
+  "nameserver": [
+   "https://cloudflare-dns.com/dns-query#默认代理",
+   "https://dns.google/dns-query#默认代理"
+  ],
+  "nameserver-policy": {
+   "rule-set:cn": [
+    "https://223.5.5.5/dns-query#DIRECT",
+    "https://1.12.12.12/dns-query#DIRECT"
+   ]
+  },
+  "direct-nameserver": [
+   "https://223.5.5.5/dns-query#DIRECT",
+   "https://1.12.12.12/dns-query#DIRECT"
+  ],
+  "fake-ip-filter-mode": "blacklist",
+  "respect-rules": false
+ },
+ "hosts": {
+  "doh.pub": [
+   "1.12.12.12",
+   "120.53.53.53"
+  ],
+  "cloudflare-dns.com": [
+   "1.1.1.1",
+   "1.0.0.1"
+  ],
+  "dns.google": [
+   "8.8.8.8",
+   "8.8.4.4"
+  ],
+  "services.googleapis.cn": "services.googleapis.com",
+  "+.mcdn.bilivideo.com": [
+   "0.0.0.0"
+  ],
+  "+.mcdn.bilivideo.cn": [
+   "0.0.0.0"
+  ],
+  "+.edge.mountaintoys.cn": [
+   "0.0.0.0"
+  ],
+  "+.h2.smtcdns.net": [
+   "0.0.0.0"
+  ]
+ },
+ "sniffer": {
+  "enable": true,
+  "force-dns-mapping": true,
+  "parse-pure-ip": true,
+  "override-destination": false,
+  "sniff": {
+   "HTTP": {
+    "ports": [
+     "80",
+     "8080-8880"
+    ],
+    "override-destination": true
+   },
+   "TLS": {
+    "ports": [
+     "443",
+     "8443"
+    ]
+   },
+   "QUIC": {
+    "ports": [
+     "443",
+     "8443"
+    ]
+   }
+  },
+  "force-domain": [
+   "+.google.com",
+   "+.youtube.com",
+   "+.telegram.org",
+   "+.openai.com",
+   "+.anthropic.com",
+   "+.claude.ai",
+   "+.claude.com",
+   "+.claude.dev",
+   "+.claudeusercontent.com",
+   "+.twitter.com",
+   "+.x.com",
+   "+.googlevideo.com",
+   "+.ytimg.com",
+   "+.chatgpt.com"
+  ],
+  "skip-dst-address": [
+   "91.105.192.0/23",
+   "91.108.4.0/22",
+   "91.108.8.0/21",
+   "91.108.16.0/21",
+   "91.108.56.0/22",
+   "95.161.64.0/20",
+   "149.154.160.0/20",
+   "185.76.151.0/24",
+   "2001:b28:f23d::/48",
+   "2001:b28:f23f::/48",
+   "2001:67c:4e8::/48"
+  ],
+  "skip-domain": [
+   "geosite:cn",
+   "geosite:geolocation-cn",
+   "geosite:category-ads-all",
+   "geosite:category-games-cn",
+   "+.gstatic.com",
+   "+.msftconnecttest.com",
+   "+.msftncsi.com",
+   "+.captive.apple.com",
+   "+.router.asus.com",
+   "+.tplogin.cn",
+   "+.hiwifi.com",
+   "+.phicomm.me",
+   "+.local",
+   "+.lan",
+   "+.home.arpa",
+   "+.unionpay.com",
+   "+.95516.com",
+   "+.alipay.com",
+   "+.alipayobjects.com",
+   "+.tenpay.com",
+   "+.wechatpay.cn",
+   "+.abchina.com",
+   "+.abchina.com.cn",
+   "+.icbc.com.cn",
+   "+.ccb.com",
+   "+.boc.cn",
+   "+.bankofchina.com",
+   "+.cmbchina.com",
+   "+.bankcomm.com",
+   "+.psbc.com",
+   "+.spdb.com.cn",
+   "+.cib.com.cn",
+   "+.cmbc.com.cn",
+   "+.pingan.com",
+   "+.cgbchina.com.cn",
+   "+.hxb.com.cn",
+   "+.cebbank.com",
+   "+.citicbank.com",
+   "+.ecitic.com",
+   "+.gfbazc.com",
+   "+.fzuol.com",
+   "+.netsunion.org.cn",
+   "+.tongdun.net",
+   "+.ishumei.com",
+   "+.geetest.com",
+   "+.trustdevice.net",
+   "+.rongcloud.cn",
+   "+.rongcloud.com",
+   "+.umeng.com",
+   "+.umengcloud.com",
+   "+.tongduncdn.com",
+   "+.dingxiangyun.com",
+   "+.dingxiangyun.cn",
+   "+.rong360.com",
+   "+.99bill.com",
+   "+.chinapay.com",
+   "+.yeepay.com",
+   "+.jdpay.com",
+   "+.unionpaysecure.com",
+   "+.pingan.com.cn",
+   "+.aegis.qq.com",
+   "+.riskradar.net",
+   "+.cpic.com.cn",
+   "+.zhongan.com",
+   "+.eastmoney.com",
+   "+.htsc.com.cn",
+   "+.gtja.com",
+   "+.jpush.cn",
+   "+.jpush.io",
+   "+.jiguang.cn",
+   "+.weixin.qq.com",
+   "+.wx.qq.com",
+   "+.servicewechat.com",
+   "+.12306.cn",
+   "+.railway12306.cn",
+   "+.chinatax.gov.cn",
+   "+.fuwu.nhsa.gov.cn",
+   "+.gjzwfw.gov.cn",
+   "+.xiaojukeji.com",
+   "+.didichuxing.com",
+   "+.work.weixin.qq.com",
+   "+.meeting.tencent.com",
+   "+.taobao.com",
+   "+.jd.com",
+   "+.pinduoduo.com",
+   "+.meituan.com",
+   "+.dianping.com",
+   "+.ele.me",
+   "+.amap.com",
+   "+.baidu.com",
+   "+.xiaohongshu.com",
+   "+.kuaishou.com",
+   "+.163.com",
+   "+.weibo.com",
+   "+.zhihu.com",
+   "+.ctrip.com",
+   "+.qunar.com",
+   "+.sf-express.com",
+   "+.dingtalk.com",
+   "+.feishu.cn",
+   "+.xuexi.cn",
+   "+.chsi.com.cn"
+  ]
+ },
+ "providers": {
+  "private": {
+   "type": "http",
+   "behavior": "domain",
+   "format": "mrs",
+   "interval": 86400,
+   "proxy": "默认代理",
+   "header": {
+    "User-Agent": [
+     "mihomo"
+    ]
+   },
+   "url": "__PUBLIC_ORIGIN__/rules/clash/private.mrs",
+   "path": "./ruleset/private.mrs",
+   "path-in-bundle": "geo/geosite/private.mrs"
+  },
+  "geolocation-cn": {
+   "type": "http",
+   "behavior": "domain",
+   "format": "mrs",
+   "interval": 86400,
+   "proxy": "默认代理",
+   "header": {
+    "User-Agent": [
+     "mihomo"
+    ]
+   },
+   "url": "__PUBLIC_ORIGIN__/rules/clash/geolocation-cn.mrs",
+   "path": "./ruleset/geolocation-cn.mrs",
+   "path-in-bundle": "geo/geosite/geolocation-cn.mrs"
+  },
+  "cn": {
+   "type": "http",
+   "behavior": "domain",
+   "format": "mrs",
+   "interval": 86400,
+   "proxy": "默认代理",
+   "header": {
+    "User-Agent": [
+     "mihomo"
+    ]
+   },
+   "url": "__PUBLIC_ORIGIN__/rules/clash/cn.mrs",
+   "path": "./ruleset/cn.mrs",
+   "path-in-bundle": "geo/geosite/cn.mrs"
+  },
+  "cn_ip": {
+   "type": "http",
+   "behavior": "ipcidr",
+   "format": "mrs",
+   "interval": 86400,
+   "proxy": "默认代理",
+   "header": {
+    "User-Agent": [
+     "mihomo"
+    ]
+   },
+   "url": "__PUBLIC_ORIGIN__/rules/clash/cn.mrs",
+   "path": "./ruleset/cn_ip.mrs",
+   "path-in-bundle": "geo/geoip/cn.mrs"
+  },
+  "fakeip_filter": {
+   "type": "http",
+   "behavior": "domain",
+   "format": "mrs",
+   "interval": 86400,
+   "proxy": "默认代理",
+   "header": {
+    "User-Agent": [
+     "mihomo"
+    ]
+   },
+   "url": "__PUBLIC_ORIGIN__/rules/clash/category-stun.mrs",
+   "path": "./ruleset/category-stun.mrs",
+   "path-in-bundle": "geo/geosite/category-stun.mrs"
+  }
+ },
+ "block_webrtc": [
+  "AND,((NETWORK,UDP),(DST-PORT,3478-3497)),REJECT",
+  "AND,((NETWORK,UDP),(DST-PORT,5349)),REJECT",
+  "AND,((NETWORK,UDP),(DST-PORT,19302-19309)),REJECT",
+  "AND,((NETWORK,TCP),(DST-PORT,3478-3497)),REJECT",
+  "AND,((NETWORK,TCP),(DST-PORT,5349)),REJECT"
+ ],
+ "block_quic": [
+  "AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,cn),(RULE-SET,cn_ip,no-resolve)))))),REJECT"
+ ]
+}

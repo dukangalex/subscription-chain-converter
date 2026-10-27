@@ -1,0 +1,2956 @@
+/**
+ * Mihomo 配置覆写脚本（全量版 · 多地区自动识别 + 安全基线）
+ */
+
+// --- 静态配置区域 ---
+
+/**
+ * 自定义配置选项
+ * true = 启用
+ * false = 禁用
+ */
+/** 通用自定义开关协议；客户端适配器不属于核心逻辑。 */
+const CustomOptions = Object.freeze({
+  version: 1,
+  type: 'toggle-map',
+  source: 'ruleOptionsEnable',
+});
+
+const ruleOptionsEnable = {
+  // 基础策略组
+  手动选择: true, // 是否启用手动选择策略组
+  自动选择: true, // 是否启用自动选择策略组
+  负载均衡: true, // 是否启用负载均衡策略组
+  故障转移: true, // 是否启用故障转移策略组
+  远控工具: true, // 是否启用远控工具分流组
+
+  // 以下为分流策略配置
+  FCM: true, // GoogleFCM服务
+  YouTube: true, // YouTube视频平台
+  Google: true, // Google服务
+  AI: true, // 国外AI服务
+  Claude: true, // Claude / Anthropic 服务
+  Microsoft: true, // Microsoft服务
+  Apple: true, // Apple服务
+  Telegram: true, // Telegram通讯软件
+  Steam: true, // Steam游戏平台
+  TikTok: true, // TikTok视频平台
+  Twitter: true, // Twitter社交平台
+  Meta: true, // Meta服务
+  Line: true, // Line通讯软件
+  Netflix: true, // Netflix视频平台
+  Emby: true, // Emby媒体服务
+  PikPak: true, // PikPak网盘服务
+  Spotify: true, // Spotify音乐服务
+  Crypto: true, // 加密货币相关服务
+  EHentai: true, // E-Hentai网站
+  AdBlock: true, // 广告拦截
+
+  // 以下为非分流策略配置
+  极简模式: false, // 是否启用极简模式
+  生成地区自动选择组: true, // 是否生成地区自动选择策略组
+  隐藏地区手动选择组: false, // 是否隐藏地区手动选择策略组
+  生成倍率组: true, // 是否生成低倍率/高倍率策略组
+  分流组添加所有节点: false, // 是否为分流策略组添加所有节点
+  过滤低倍率节点: false, // 是否过滤低倍率节点
+  过滤高倍率节点: false, // 是否过滤高倍率节点
+  过滤非地区节点: true, // 是否过滤非地区节点
+  屏蔽国外QUIC: true, // 是否屏蔽国外QUIC流量
+  屏蔽WebRTC: true, // 是否屏蔽 WebRTC STUN 端口；关闭后 Zoom/Teams/Discord 等通话可 UDP 直连，但可能暴露真实 IP
+  强制TUN: true, // 是否强制开启 TUN（含 strict-route / auto-redirect）；关闭后保留订阅或客户端自带的 tun 配置，适用于无管理员权限、Linux 缺少 iptables/nftables 或自行管理 TUN 的环境
+  代理IPV4优先: false, // 是否将订阅节点统一为 IPv4 优先（与“代理IPV6优先”同时开启时不生效）
+  代理IPV6优先: false, // 是否将订阅节点统一为 IPv6 优先（与“代理IPV4优先”同时开启时不生效）
+  链式代理: false, // 是否启用链式代理（自定义节点作为落地节点，经“链式中转”策略组中转）
+};
+
+/**
+ * 解析外部适配器传入的自定义开关。
+ *
+ * Mihomo 核心不会调用此接口；能够传递第二参数的脚本宿主可使用：
+ *   main(config, { customOptions: { AI: false, 链式代理: true } })
+ * 未提供参数时保持脚本内置默认值，保证现有客户端行为不变。
+ */
+function resolveRuleOptions(context) {
+  const supplied = context && typeof context === 'object' ? context.customOptions : undefined;
+  if (supplied === undefined) return { ...ruleOptionsEnable };
+  if (!supplied || typeof supplied !== 'object' || Array.isArray(supplied)) {
+    throw new Error('customOptions must be an object');
+  }
+
+  const resolved = { ...ruleOptionsEnable };
+  for (const [key, value] of Object.entries(supplied)) {
+    if (!Object.prototype.hasOwnProperty.call(ruleOptionsEnable, key)) {
+      throw new Error('unknown custom option: ' + key);
+    }
+    if (typeof value !== 'boolean') {
+      throw new Error('custom option ' + key + ' must be boolean');
+    }
+    resolved[key] = value;
+  }
+  return resolved;
+}
+
+let activeRuleOptions = ruleOptionsEnable;
+let activeChainLanding = false;
+
+// 定义前置规则
+const prefixRules = [
+  // 本机服务直连。订阅里的 subconverter 规则集常用 127.0.0.1:18080，不能被 TUN 吸走。
+  'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve',
+  'IP-CIDR6,::1/128,DIRECT,no-resolve',
+
+  // 私有网络直连
+  'RULE-SET,private,直连',
+
+  // 国内直连
+  'RULE-SET,geolocation-cn,直连',
+  'RULE-SET,games_cn,直连', // 已包含 steam 下载域名
+  'RULE-SET,nvidia_cn,直连',
+  'RULE-SET,apple_cn,直连',
+  'RULE-SET,microsoft_cn,直连',
+  'RULE-SET,bilibili,直连',
+  'DOMAIN,fsend.cn,直连',
+  // 社区刚需：B 站国际版与 Disney+ 走默认代理，便于按地区解锁
+  'RULE-SET,biliintl,默认代理',
+  'RULE-SET,disney,默认代理',
+];
+
+// 此处添加自定义节点，填入下方[]内（可选，留空则不生成“自建节点”策略组）
+// 自定义节点不参与节点过滤与 hosts 改写；与订阅节点（标准化后）重名时自动添加“自建-”前缀
+// 示例：
+// const customizeProxies = [
+//   {
+//     name: '自建-日本-01',
+//     type: 'vmess',
+//     server: '5.6.7.8',
+//     port: 443,
+//     uuid: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+//     alterId: 0,
+//     cipher: 'auto',
+//     tls: true,
+//     servername: 'example.com',
+//     network: 'ws',
+//     'ws-opts': {
+//       path: '/path',
+//       headers: { Host: 'example.com' },
+//     },
+//   },
+// ];
+const customizeProxies = [];
+
+// 链式代理启用时，自定义节点的 dialer-proxy 引用目标
+const dialerProxyName = '链式中转';
+
+// 定义全局排除节点的正则表达式，用于排除非地区节点
+const excludeFilter =
+  /群|返利|循环|官网|客服|网站|网址|获取|订阅|流量|到期|机场|下次|版本|官址|备用|过期|已用|联系|邮箱|工单|贩卖|通知|倒卖|防止|国内|地址|频道|电报|无法|说明|使用|提示|访问|支持|教程|关注|更新|作者|加入|超时|收藏|优惠|福利|邀请|好友|失联|选择|剩余|公益|发布|DIZTNA|通路|登录|禁止|定时|渠道|牢记|永久|余额|阁下|本站|刷新|导航|建议|重置|以下|过滤|⚠️|@|t\.me\/\+|\bexpire\b|\bhttps?:\/\/|\btraffic\b/iu;
+
+// 强信息词：机场公告 / 客服 / 流量 / 到期类信息节点。这类节点名称常偶然带有地区缩写
+//（如“剩余流量 120 GB”命中 GB=英国、“客服 TG”命中 TG=多哥），因此即使地区匹配成功也必须排除。
+// 与 excludeFilter 中“使用/支持/备用”等弱词不同：弱词可能出现在正常节点名里，仍以地区匹配为准。
+const strongExcludeFilter =
+  /剩余|已用|距离下次|下次重置|套餐|到期|过期|官网|官址|客服|订阅|工单|邮箱|网址|流量\s*[:：]|traffic\s*[:：]|\bexpire\b|\bhttps?:\/\/|t\.me\//iu;
+
+// 屏蔽 WebRTC STUN，降低浏览器真实地址暴露风险
+// @shared:begin blockWebRtcStun — 由 Script/shared/blockWebRtcStun.js 同步，请勿在此直接修改
+const blockWebRtcStun = [
+  'AND,((NETWORK,UDP),(DST-PORT,3478-3497)),REJECT',
+  'AND,((NETWORK,UDP),(DST-PORT,5349)),REJECT',
+  'AND,((NETWORK,UDP),(DST-PORT,19302-19309)),REJECT',
+  'AND,((NETWORK,TCP),(DST-PORT,3478-3497)),REJECT',
+  'AND,((NETWORK,TCP),(DST-PORT,5349)),REJECT',
+];
+// @shared:end blockWebRtcStun
+
+// @shared:begin blockForeignQuic — 由 Script/shared/blockForeignQuic.js 同步，请勿在此直接修改
+const blockForeignQuic = [
+  'AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,cn),(RULE-SET,cn_ip,no-resolve)))))),REJECT',
+];
+// @shared:end blockForeignQuic
+
+// 直连节点
+// @shared:begin directProxies — 由 Script/shared/directProxies.js 同步，请勿在此直接修改
+const directProxies = [
+  {
+    name: '🇨🇳 直连 | 双栈',
+    type: 'direct',
+  },
+  {
+    name: '🇨🇳 直连 | IPv4优先',
+    type: 'direct',
+    'ip-version': 'ipv4-prefer',
+  },
+  {
+    name: '🇨🇳 直连 | IPv6优先',
+    type: 'direct',
+    'ip-version': 'ipv6-prefer',
+  },
+  {
+    name: '🇨🇳 直连 | 仅IPv4',
+    type: 'direct',
+    'ip-version': 'ipv4',
+  },
+  {
+    name: '🇨🇳 直连 | 仅IPv6',
+    type: 'direct',
+    'ip-version': 'ipv6',
+  },
+];
+// @shared:end directProxies
+
+// 定义地区策略组
+// @shared:begin regionDefinitions — 由 Script/shared/regionDefinitions.js 同步，请勿在此直接修改
+const regionDefinitions = [
+  { name: '香港', flag: '🇭🇰', regex: new RegExp('🇭🇰|香港|\\bHKG?\\b|hong[\\s_-]*kong', 'i'), icon: '' },
+  {
+    name: '台湾',
+    flag: '🇹🇼',
+    regex: new RegExp('🇹🇼|台湾|台北|高雄|新北|桃园|新竹|\\bTWN?\\b|taiwan|taipei|hinet', 'i'),
+    icon: '',
+  },
+  { name: '日本', flag: '🇯🇵', regex: new RegExp('🇯🇵|日本|\\bJPN?\\b|japan|tokyo|osaka|东京|大阪', 'i'), icon: '' },
+  {
+    name: '韩国',
+    flag: '🇰🇷',
+    regex: new RegExp('🇰🇷|韩国|(?:^|[^A-Za-z])KR(?:$|[^A-Za-z])|korea|seoul|首尔', 'i'),
+    icon: '',
+  },
+  { name: '新加坡', flag: '🇸🇬', regex: new RegExp('🇸🇬|新加坡|狮城|\\bSGP?\\b|singapore', 'i'), icon: '' },
+  {
+    name: '美国',
+    flag: '🇺🇸',
+    regex: new RegExp(
+      '🇺🇸|美国|(?:^|[^A-Za-z])US(?:$|[^A-Za-z])|(?:^|[^A-Za-z])USA(?:$|[^A-Za-z])|america|united[\\s_-]*states|los[\\s_-]*angeles|洛杉矶|san[\\s_-]*jose|圣何塞|纽约|new[\\s_-]*york|芝加哥|chicago|达拉斯|dallas|西雅图|seattle|硅谷|矽谷|silicon|迈阿密|miami|凤凰城|phoenix',
+      'i',
+    ),
+    icon: '',
+  },
+  {
+    name: '英国',
+    flag: '🇬🇧',
+    regex: new RegExp('🇬🇧|英国|(?:^|[^A-Za-z0-9])GB(?:$|[^A-Za-z])|united[\\s_-]*kingdom|london|伦敦', 'i'),
+    icon: '',
+  },
+  {
+    name: '德国',
+    flag: '🇩🇪',
+    regex: new RegExp('🇩🇪|德国|(?:^|[^A-Za-z])DE(?:$|[^A-Za-z])|germany|frankfurt|法兰克福', 'i'),
+    icon: '',
+  },
+  {
+    name: '荷兰',
+    flag: '🇳🇱',
+    regex: new RegExp('🇳🇱|荷兰|(?:^|[^A-Za-z])NL(?:$|[^A-Za-z])|nether?lands|amsterdam|阿姆斯特丹', 'i'),
+    icon: '',
+  },
+  {
+    name: '马来西亚',
+    flag: '🇲🇾',
+    regex: new RegExp('🇲🇾|马来西亚|(?:^|[^A-Za-z])MY(?:$|[^A-Za-z])|malaysia|kuala[\\s_-]*lumpur|吉隆坡', 'i'),
+    icon: '',
+  },
+  {
+    name: '泰国',
+    flag: '🇹🇭',
+    regex: new RegExp('🇹🇭|泰国|(?:^|[^A-Za-z])TH(?:$|[^A-Za-z])|thailand|bangkok|曼谷', 'i'),
+    icon: '',
+  },
+  {
+    name: '越南',
+    flag: '🇻🇳',
+    regex: new RegExp(
+      '🇻🇳|越南|(?:^|[^A-Za-z])VN(?:$|[^A-Za-z])|vietnam|hanoi|河内|ho[\\s_-]*chi[\\s_-]*minh|胡志明',
+      'i',
+    ),
+    icon: '',
+  },
+  {
+    name: '菲律宾',
+    flag: '🇵🇭',
+    regex: new RegExp('🇵🇭|菲律宾|(?:^|[^A-Za-z])PH(?:$|[^A-Za-z])|philippines|manila|马尼拉', 'i'),
+    icon: '',
+  },
+  {
+    name: '印尼',
+    flag: '🇮🇩',
+    regex: new RegExp('🇮🇩|印尼|印度尼西亚|(?:^|[^A-Za-z])ID(?:$|[^A-Za-z])|indonesia|jakarta|雅加达', 'i'),
+    icon: '',
+  },
+  {
+    name: '印度',
+    flag: '🇮🇳',
+    regex: new RegExp('🇮🇳|印度|(?:^|[^A-Za-z])IN(?:$|[^A-Za-z])|india|mumbai|孟买|delhi|德里', 'i'),
+    icon: '',
+  },
+  {
+    name: '澳大利亚',
+    flag: '🇦🇺',
+    regex: new RegExp('🇦🇺|澳大利亚|澳洲|(?:^|[^A-Za-z])AU(?:$|[^A-Za-z])|australia|sydney|悉尼|melbourne|墨尔本', 'i'),
+    icon: '',
+  },
+  {
+    name: '法国',
+    flag: '🇫🇷',
+    regex: new RegExp('🇫🇷|法国|(?:^|[^A-Za-z])FR(?:$|[^A-Za-z])|france|paris|巴黎', 'i'),
+    icon: '',
+  },
+  {
+    name: '俄罗斯',
+    flag: '🇷🇺',
+    regex: new RegExp('🇷🇺|俄罗斯|(?:^|[^A-Za-z])RU(?:$|[^A-Za-z])|russia|moscow|莫斯科', 'i'),
+    icon: '',
+  },
+  {
+    name: '意大利',
+    flag: '🇮🇹',
+    regex: new RegExp('🇮🇹|意大利|(?:^|[^A-Za-z])IT(?:$|[^A-Za-z])|\\bitaly\\b|rome|罗马', 'i'),
+    icon: '',
+  },
+  {
+    name: '加拿大',
+    flag: '🇨🇦',
+    regex: new RegExp('🇨🇦|加拿大|(?:^|[^A-Za-z])CA(?:$|[^A-Za-z])|canada|toronto|多伦多', 'i'),
+    icon: '',
+  },
+  {
+    name: '阿根廷',
+    flag: '🇦🇷',
+    regex: new RegExp('🇦🇷|阿根廷|(?:^|[^A-Za-z])AR(?:$|[^A-Za-z])|argentina|buenos[\\s_-]*aires|布宜诺斯艾利斯', 'i'),
+    icon: '',
+  },
+  {
+    name: '巴西',
+    flag: '🇧🇷',
+    regex: new RegExp('🇧🇷|巴西|(?:^|[^A-Za-z])BR(?:$|[^A-Za-z])|brazil|sao[\\s_-]*paulo|圣保罗', 'i'),
+    icon: '',
+  },
+  { name: '墨西哥', flag: '🇲🇽', regex: new RegExp('🇲🇽|墨西哥|(?:^|[^A-Za-z])MX(?:$|[^A-Za-z])|mexico', 'i'), icon: '' },
+  {
+    name: '沙特阿拉伯',
+    flag: '🇸🇦',
+    regex: new RegExp('🇸🇦|沙特阿拉伯|沙特|(?:^|[^A-Za-z])SA(?:$|[^A-Za-z])|saudi[\\s_-]*arabia', 'i'),
+    icon: '',
+  },
+  {
+    name: '南非',
+    flag: '🇿🇦',
+    regex: new RegExp('🇿🇦|南非|(?:^|[^A-Za-z])ZA(?:$|[^A-Za-z])|south[\\s_-]*africa|johannesburg|约翰内斯堡', 'i'),
+    icon: '',
+  },
+  {
+    name: '土耳其',
+    flag: '🇹🇷',
+    regex: new RegExp('🇹🇷|土耳其|(?:^|[^A-Za-z])TR(?:$|[^A-Za-z])|turkey|istanbul|伊斯坦布尔', 'i'),
+    icon: '',
+  },
+  { name: '文莱', flag: '🇧🇳', regex: new RegExp('🇧🇳|文莱|(?:^|[^A-Za-z])BN(?:$|[^A-Za-z])|brunei', 'i'), icon: '' },
+  {
+    name: '柬埔寨',
+    flag: '🇰🇭',
+    regex: new RegExp('🇰🇭|柬埔寨|(?:^|[^A-Za-z])KH(?:$|[^A-Za-z])|cambodia|phnom[\\s_-]*penh|金边', 'i'),
+    icon: '',
+  },
+  {
+    name: '老挝',
+    flag: '🇱🇦',
+    regex: new RegExp('🇱🇦|老挝|(?:^|[^A-Za-z])LA(?:$|[^A-Za-z])|\\blaos\\b|vientiane|万象', 'i'),
+    icon: '',
+  },
+  {
+    name: '缅甸',
+    flag: '🇲🇲',
+    regex: new RegExp('🇲🇲|缅甸|(?:^|[^A-Za-z])MM(?:$|[^A-Za-z])|myanmar|yangon|仰光', 'i'),
+    icon: '',
+  },
+  {
+    name: '奥地利',
+    flag: '🇦🇹',
+    regex: new RegExp('🇦🇹|奥地利|(?:^|[^A-Za-z])AT(?:$|[^A-Za-z])|austria|vienna|维也纳', 'i'),
+    icon: '',
+  },
+  {
+    name: '比利时',
+    flag: '🇧🇪',
+    regex: new RegExp('🇧🇪|比利时|(?:^|[^A-Za-z])BE(?:$|[^A-Za-z])|belgium|brussels|布鲁塞尔', 'i'),
+    icon: '',
+  },
+  {
+    name: '保加利亚',
+    flag: '🇧🇬',
+    regex: new RegExp('🇧🇬|保加利亚|(?:^|[^A-Za-z])BG(?:$|[^A-Za-z])|bulgaria|sofia|索非亚', 'i'),
+    icon: '',
+  },
+  {
+    name: '克罗地亚',
+    flag: '🇭🇷',
+    regex: new RegExp('🇭🇷|克罗地亚|(?:^|[^A-Za-z])HR(?:$|[^A-Za-z])|croatia', 'i'),
+    icon: '',
+  },
+  {
+    name: '塞浦路斯',
+    flag: '🇨🇾',
+    regex: new RegExp('🇨🇾|塞浦路斯|(?:^|[^A-Za-z])CY(?:$|[^A-Za-z])|cyprus', 'i'),
+    icon: '',
+  },
+  {
+    name: '捷克',
+    flag: '🇨🇿',
+    regex: new RegExp('🇨🇿|捷克|捷克共和国|(?:^|[^A-Za-z])CZ(?:$|[^A-Za-z])|czech|prague|布拉格', 'i'),
+    icon: '',
+  },
+  {
+    name: '丹麦',
+    flag: '🇩🇰',
+    regex: new RegExp('🇩🇰|丹麦|(?:^|[^A-Za-z])DK(?:$|[^A-Za-z])|denmark|copenhagen|哥本哈根', 'i'),
+    icon: '',
+  },
+  {
+    name: '爱沙尼亚',
+    flag: '🇪🇪',
+    regex: new RegExp('🇪🇪|爱沙尼亚|(?:^|[^A-Za-z])EE(?:$|[^A-Za-z])|estonia', 'i'),
+    icon: '',
+  },
+  {
+    name: '芬兰',
+    flag: '🇫🇮',
+    regex: new RegExp('🇫🇮|芬兰|(?:^|[^A-Za-z])FI(?:$|[^A-Za-z])|finland|helsinki|赫尔辛基', 'i'),
+    icon: '',
+  },
+  {
+    name: '希腊',
+    flag: '🇬🇷',
+    regex: new RegExp('🇬🇷|希腊|(?:^|[^A-Za-z])GR(?:$|[^A-Za-z])|greece|athens|雅典', 'i'),
+    icon: '',
+  },
+  {
+    name: '匈牙利',
+    flag: '🇭🇺',
+    regex: new RegExp('🇭🇺|匈牙利|(?:^|[^A-Za-z])HU(?:$|[^A-Za-z])|hungary|budapest|布达佩斯', 'i'),
+    icon: '',
+  },
+  {
+    name: '爱尔兰',
+    flag: '🇮🇪',
+    regex: new RegExp('🇮🇪|爱尔兰|(?:^|[^A-Za-z])IE(?:$|[^A-Za-z])|ireland|dublin|都柏林', 'i'),
+    icon: '',
+  },
+  {
+    name: '拉脱维亚',
+    flag: '🇱🇻',
+    regex: new RegExp('🇱🇻|拉脱维亚|(?:^|[^A-Za-z])LV(?:$|[^A-Za-z])|latvia', 'i'),
+    icon: '',
+  },
+  {
+    name: '立陶宛',
+    flag: '🇱🇹',
+    regex: new RegExp('🇱🇹|立陶宛|(?:^|[^A-Za-z])LT(?:$|[^A-Za-z])|lithuania', 'i'),
+    icon: '',
+  },
+  {
+    name: '卢森堡',
+    flag: '🇱🇺',
+    regex: new RegExp('🇱🇺|卢森堡|(?:^|[^A-Za-z])LU(?:$|[^A-Za-z])|luxembourg', 'i'),
+    icon: '',
+  },
+  { name: '马耳他', flag: '🇲🇹', regex: new RegExp('🇲🇹|马耳他|(?:^|[^A-Za-z])MT(?:$|[^A-Za-z])|malta', 'i'), icon: '' },
+  {
+    name: '波兰',
+    flag: '🇵🇱',
+    regex: new RegExp('🇵🇱|波兰|(?:^|[^A-Za-z])PL(?:$|[^A-Za-z])|poland|warsaw|华沙', 'i'),
+    icon: '',
+  },
+  {
+    name: '葡萄牙',
+    flag: '🇵🇹',
+    regex: new RegExp('🇵🇹|葡萄牙|(?:^|[^A-Za-z])PT(?:$|[^A-Za-z])|portugal|lisbon|里斯本', 'i'),
+    icon: '',
+  },
+  {
+    name: '罗马尼亚',
+    flag: '🇷🇴',
+    regex: new RegExp('🇷🇴|罗马尼亚|(?:^|[^A-Za-z])RO(?:$|[^A-Za-z])|romania|bucharest|布加勒斯特', 'i'),
+    icon: '',
+  },
+  {
+    name: '斯洛伐克',
+    flag: '🇸🇰',
+    regex: new RegExp('🇸🇰|斯洛伐克|(?:^|[^A-Za-z])SK(?:$|[^A-Za-z])|slovakia', 'i'),
+    icon: '',
+  },
+  {
+    name: '斯洛文尼亚',
+    flag: '🇸🇮',
+    regex: new RegExp('🇸🇮|斯洛文尼亚|(?:^|[^A-Za-z])SI(?:$|[^A-Za-z])|slovenia', 'i'),
+    icon: '',
+  },
+  {
+    name: '西班牙',
+    flag: '🇪🇸',
+    regex: new RegExp('🇪🇸|西班牙|(?:^|[^A-Za-z])ES(?:$|[^A-Za-z])|\\bspain\\b|madrid|马德里', 'i'),
+    icon: '',
+  },
+  {
+    name: '瑞典',
+    flag: '🇸🇪',
+    regex: new RegExp('🇸🇪|瑞典|(?:^|[^A-Za-z])SE(?:$|[^A-Za-z])|sweden|stockholm|斯德哥尔摩', 'i'),
+    icon: '',
+  },
+  {
+    name: '阿尔及利亚',
+    flag: '🇩🇿',
+    regex: new RegExp('🇩🇿|阿尔及利亚|(?:^|[^A-Za-z])DZ(?:$|[^A-Za-z])|algeria', 'i'),
+    icon: '',
+  },
+  { name: '安哥拉', flag: '🇦🇴', regex: new RegExp('🇦🇴|安哥拉|(?:^|[^A-Za-z])AO(?:$|[^A-Za-z])|angola', 'i'), icon: '' },
+  { name: '贝宁', flag: '🇧🇯', regex: new RegExp('🇧🇯|贝宁|(?:^|[^A-Za-z])BJ(?:$|[^A-Za-z])|benin', 'i'), icon: '' },
+  {
+    name: '博茨瓦纳',
+    flag: '🇧🇼',
+    regex: new RegExp('🇧🇼|博茨瓦纳|(?:^|[^A-Za-z])BW(?:$|[^A-Za-z])|botswana', 'i'),
+    icon: '',
+  },
+  {
+    name: '布基纳法索',
+    flag: '🇧🇫',
+    regex: new RegExp('🇧🇫|布基纳法索|(?:^|[^A-Za-z])BF(?:$|[^A-Za-z])|burkina[\\s_-]*faso', 'i'),
+    icon: '',
+  },
+  {
+    name: '布隆迪',
+    flag: '🇧🇮',
+    regex: new RegExp('🇧🇮|布隆迪|(?:^|[^A-Za-z])BI(?:$|[^A-Za-z])|burundi', 'i'),
+    icon: '',
+  },
+  {
+    name: '佛得角',
+    flag: '🇨🇻',
+    regex: new RegExp('🇨🇻|佛得角|(?:^|[^A-Za-z])CV(?:$|[^A-Za-z])|cabo[\\s_-]*verde|cape[\\s_-]*verde', 'i'),
+    icon: '',
+  },
+  {
+    name: '喀麦隆',
+    flag: '🇨🇲',
+    regex: new RegExp('🇨🇲|喀麦隆|(?:^|[^A-Za-z])CM(?:$|[^A-Za-z])|cameroon', 'i'),
+    icon: '',
+  },
+  {
+    name: '中非共和国',
+    flag: '🇨🇫',
+    regex: new RegExp('🇨🇫|中非共和国|中非|(?:^|[^A-Za-z])CF(?:$|[^A-Za-z])|central[\\s_-]*african', 'i'),
+    icon: '',
+  },
+  { name: '乍得', flag: '🇹🇩', regex: new RegExp('🇹🇩|乍得|(?:^|[^A-Za-z])TD(?:$|[^A-Za-z])|\\bchad\\b', 'i'), icon: '' },
+  {
+    name: '科摩罗',
+    flag: '🇰🇲',
+    regex: new RegExp('🇰🇲|科摩罗|(?:^|[^A-Za-z])KM(?:$|[^A-Za-z])|comoros', 'i'),
+    icon: '',
+  },
+  {
+    name: '刚果共和国',
+    flag: '🇨🇬',
+    regex: new RegExp('🇨🇬|刚果共和国|刚果（布）|(?:^|[^A-Za-z])CG(?:$|[^A-Za-z])|\\bcongo\\b', 'i'),
+    icon: '',
+  },
+  {
+    name: '刚果民主共和国',
+    flag: '🇨🇩',
+    regex: new RegExp(
+      '🇨🇩|刚果民主共和国|刚果（金）|民主刚果|(?:^|[^A-Za-z])CD(?:$|[^A-Za-z])|dr[\\s_-]*congo|democratic[\\s_-]*republic[\\s_-]*of[\\s_-]*the[\\s_-]*congo',
+      'i',
+    ),
+    icon: '',
+  },
+  {
+    name: '科特迪瓦',
+    flag: '🇨🇮',
+    regex: new RegExp(
+      '🇨🇮|科特迪瓦|象牙海岸|(?:^|[^A-Za-z])CI(?:$|[^A-Za-z])|cote[\\s_-]*d.ivoire|ivory[\\s_-]*coast',
+      'i',
+    ),
+    icon: '',
+  },
+  {
+    name: '吉布提',
+    flag: '🇩🇯',
+    regex: new RegExp('🇩🇯|吉布提|(?:^|[^A-Za-z])DJ(?:$|[^A-Za-z])|djibouti', 'i'),
+    icon: '',
+  },
+  {
+    name: '埃及',
+    flag: '🇪🇬',
+    regex: new RegExp('🇪🇬|埃及|(?:^|[^A-Za-z])EG(?:$|[^A-Za-z])|egypt|cairo|开罗', 'i'),
+    icon: '',
+  },
+  {
+    name: '赤道几内亚',
+    flag: '🇬🇶',
+    regex: new RegExp('🇬🇶|赤道几内亚|(?:^|[^A-Za-z])GQ(?:$|[^A-Za-z])|equatorial[\\s_-]*guinea', 'i'),
+    icon: '',
+  },
+  {
+    name: '厄立特里亚',
+    flag: '🇪🇷',
+    regex: new RegExp('🇪🇷|厄立特里亚|(?:^|[^A-Za-z])ER(?:$|[^A-Za-z])|eritrea', 'i'),
+    icon: '',
+  },
+  {
+    name: '斯威士兰',
+    flag: '🇸🇿',
+    regex: new RegExp('🇸🇿|斯威士兰|埃斯瓦蒂尼|(?:^|[^A-Za-z])SZ(?:$|[^A-Za-z])|eswatini|swaziland', 'i'),
+    icon: '',
+  },
+  {
+    name: '埃塞俄比亚',
+    flag: '🇪🇹',
+    regex: new RegExp('🇪🇹|埃塞俄比亚|(?:^|[^A-Za-z])ET(?:$|[^A-Za-z])|ethiopia', 'i'),
+    icon: '',
+  },
+  {
+    name: '加蓬',
+    flag: '🇬🇦',
+    regex: new RegExp('🇬🇦|加蓬|(?:^|[^A-Za-z])GA(?:$|[^A-Za-z])|\\bgabon\\b', 'i'),
+    icon: '',
+  },
+  { name: '冈比亚', flag: '🇬🇲', regex: new RegExp('🇬🇲|冈比亚|(?:^|[^A-Za-z])GM(?:$|[^A-Za-z])|gambia', 'i'), icon: '' },
+  {
+    name: '加纳',
+    flag: '🇬🇭',
+    regex: new RegExp('🇬🇭|加纳|(?:^|[^A-Za-z])GH(?:$|[^A-Za-z])|\\bghana\\b', 'i'),
+    icon: '',
+  },
+  {
+    name: '几内亚',
+    flag: '🇬🇳',
+    regex: new RegExp('🇬🇳|几内亚|(?:^|[^A-Za-z])GN(?:$|[^A-Za-z])|\\bguinea\\b', 'i'),
+    icon: '',
+  },
+  {
+    name: '几内亚比绍',
+    flag: '🇬🇼',
+    regex: new RegExp('🇬🇼|几内亚比绍|(?:^|[^A-Za-z])GW(?:$|[^A-Za-z])|guinea-bissau|guinea[\\s_-]*bissau', 'i'),
+    icon: '',
+  },
+  {
+    name: '肯尼亚',
+    flag: '🇰🇪',
+    regex: new RegExp('🇰🇪|肯尼亚|(?:^|[^A-Za-z])KE(?:$|[^A-Za-z])|kenya|nairobi|内罗毕', 'i'),
+    icon: '',
+  },
+  {
+    name: '莱索托',
+    flag: '🇱🇸',
+    regex: new RegExp('🇱🇸|莱索托|(?:^|[^A-Za-z])LS(?:$|[^A-Za-z])|lesotho', 'i'),
+    icon: '',
+  },
+  {
+    name: '利比里亚',
+    flag: '🇱🇷',
+    regex: new RegExp('🇱🇷|利比里亚|(?:^|[^A-Za-z])LR(?:$|[^A-Za-z])|liberia', 'i'),
+    icon: '',
+  },
+  {
+    name: '利比亚',
+    flag: '🇱🇾',
+    regex: new RegExp('🇱🇾|利比亚|(?:^|[^A-Za-z])LY(?:$|[^A-Za-z])|\\blibya\\b', 'i'),
+    icon: '',
+  },
+  {
+    name: '马达加斯加',
+    flag: '🇲🇬',
+    regex: new RegExp('🇲🇬|马达加斯加|(?:^|[^A-Za-z])MG(?:$|[^A-Za-z])|madagascar', 'i'),
+    icon: '',
+  },
+  { name: '马拉维', flag: '🇲🇼', regex: new RegExp('🇲🇼|马拉维|(?:^|[^A-Za-z])MW(?:$|[^A-Za-z])|malawi', 'i'), icon: '' },
+  { name: '马里', flag: '🇲🇱', regex: new RegExp('🇲🇱|马里|(?:^|[^A-Za-z])ML(?:$|[^A-Za-z])|\\bmali\\b', 'i'), icon: '' },
+  {
+    name: '毛里塔尼亚',
+    flag: '🇲🇷',
+    regex: new RegExp('🇲🇷|毛里塔尼亚|(?:^|[^A-Za-z])MR(?:$|[^A-Za-z])|mauritania', 'i'),
+    icon: '',
+  },
+  {
+    name: '毛里求斯',
+    flag: '🇲🇺',
+    regex: new RegExp('🇲🇺|毛里求斯|(?:^|[^A-Za-z])MU(?:$|[^A-Za-z])|mauritius', 'i'),
+    icon: '',
+  },
+  {
+    name: '摩洛哥',
+    flag: '🇲🇦',
+    regex: new RegExp('🇲🇦|摩洛哥|(?:^|[^A-Za-z])MA(?:$|[^A-Za-z])|morocco|casablanca|卡萨布兰卡', 'i'),
+    icon: '',
+  },
+  {
+    name: '莫桑比克',
+    flag: '🇲🇿',
+    regex: new RegExp('🇲🇿|莫桑比克|(?:^|[^A-Za-z])MZ(?:$|[^A-Za-z])|mozambique', 'i'),
+    icon: '',
+  },
+  {
+    name: '纳米比亚',
+    flag: '🇳🇦',
+    regex: new RegExp('🇳🇦|纳米比亚|(?:^|[^A-Za-z])NA(?:$|[^A-Za-z])|\\bnamibia\\b', 'i'),
+    icon: '',
+  },
+  {
+    name: '尼日尔',
+    flag: '🇳🇪',
+    regex: new RegExp('🇳🇪|尼日尔|(?:^|[^A-Za-z])NE(?:$|[^A-Za-z])|\\bniger\\b', 'i'),
+    icon: '',
+  },
+  {
+    name: '尼日利亚',
+    flag: '🇳🇬',
+    regex: new RegExp('🇳🇬|尼日利亚|(?:^|[^A-Za-z])NG(?:$|[^A-Za-z])|nigeria|lagos|拉各斯', 'i'),
+    icon: '',
+  },
+  { name: '卢旺达', flag: '🇷🇼', regex: new RegExp('🇷🇼|卢旺达|(?:^|[^A-Za-z])RW(?:$|[^A-Za-z])|rwanda', 'i'), icon: '' },
+  {
+    name: '圣多美和普林西比',
+    flag: '🇸🇹',
+    regex: new RegExp('🇸🇹|圣多美和普林西比|(?:^|[^A-Za-z])ST(?:$|[^A-Za-z])|sao[\\s_-]*tome', 'i'),
+    icon: '',
+  },
+  {
+    name: '塞内加尔',
+    flag: '🇸🇳',
+    regex: new RegExp('🇸🇳|塞内加尔|(?:^|[^A-Za-z])SN(?:$|[^A-Za-z])|senegal', 'i'),
+    icon: '',
+  },
+  {
+    name: '塞舌尔',
+    flag: '🇸🇨',
+    regex: new RegExp('🇸🇨|塞舌尔|(?:^|[^A-Za-z])SC(?:$|[^A-Za-z])|seychelles', 'i'),
+    icon: '',
+  },
+  {
+    name: '塞拉利昂',
+    flag: '🇸🇱',
+    regex: new RegExp('🇸🇱|塞拉利昂|(?:^|[^A-Za-z])SL(?:$|[^A-Za-z])|sierra[\\s_-]*leone', 'i'),
+    icon: '',
+  },
+  {
+    name: '索马里',
+    flag: '🇸🇴',
+    regex: new RegExp('🇸🇴|索马里|(?:^|[^A-Za-z])SO(?:$|[^A-Za-z])|somalia', 'i'),
+    icon: '',
+  },
+  {
+    name: '南苏丹',
+    flag: '🇸🇸',
+    regex: new RegExp('🇸🇸|南苏丹|(?:^|[^A-Za-z])SS(?:$|[^A-Za-z])|south[\\s_-]*sudan', 'i'),
+    icon: '',
+  },
+  {
+    name: '苏丹',
+    flag: '🇸🇩',
+    regex: new RegExp('🇸🇩|苏丹|(?:^|[^A-Za-z])SD(?:$|[^A-Za-z])|\\bsudan\\b', 'i'),
+    icon: '',
+  },
+  {
+    name: '坦桑尼亚',
+    flag: '🇹🇿',
+    regex: new RegExp('🇹🇿|坦桑尼亚|(?:^|[^A-Za-z])TZ(?:$|[^A-Za-z])|tanzania', 'i'),
+    icon: '',
+  },
+  { name: '多哥', flag: '🇹🇬', regex: new RegExp('🇹🇬|多哥|(?:^|[^A-Za-z])TG(?:$|[^A-Za-z])|\\btogo\\b', 'i'), icon: '' },
+  {
+    name: '突尼斯',
+    flag: '🇹🇳',
+    regex: new RegExp('🇹🇳|突尼斯|(?:^|[^A-Za-z])TN(?:$|[^A-Za-z])|tunisia', 'i'),
+    icon: '',
+  },
+  { name: '乌干达', flag: '🇺🇬', regex: new RegExp('🇺🇬|乌干达|(?:^|[^A-Za-z])UG(?:$|[^A-Za-z])|uganda', 'i'), icon: '' },
+  { name: '赞比亚', flag: '🇿🇲', regex: new RegExp('🇿🇲|赞比亚|(?:^|[^A-Za-z])ZM(?:$|[^A-Za-z])|zambia', 'i'), icon: '' },
+  {
+    name: '津巴布韦',
+    flag: '🇿🇼',
+    regex: new RegExp('🇿🇼|津巴布韦|(?:^|[^A-Za-z])ZW(?:$|[^A-Za-z])|zimbabwe', 'i'),
+    icon: '',
+  },
+  { name: '阿富汗', flag: '🇦🇫', regex: new RegExp('🇦🇫|阿富汗|afghanistan', 'i'), icon: '' },
+  { name: '亚美尼亚', flag: '🇦🇲', regex: new RegExp('🇦🇲|亚美尼亚|armenia', 'i'), icon: '' },
+  { name: '阿塞拜疆', flag: '🇦🇿', regex: new RegExp('🇦🇿|阿塞拜疆|azerbaijan', 'i'), icon: '' },
+  { name: '巴林', flag: '🇧🇭', regex: new RegExp('🇧🇭|巴林|bahrain', 'i'), icon: '' },
+  { name: '孟加拉国', flag: '🇧🇩', regex: new RegExp('🇧🇩|孟加拉国|bangladesh', 'i'), icon: '' },
+  { name: '不丹', flag: '🇧🇹', regex: new RegExp('🇧🇹|不丹|bhutan', 'i'), icon: '' },
+  { name: '格鲁吉亚', flag: '🇬🇪', regex: new RegExp('🇬🇪|格鲁吉亚|georgia', 'i'), icon: '' },
+  { name: '伊朗', flag: '🇮🇷', regex: new RegExp('🇮🇷|伊朗|iran', 'i'), icon: '' },
+  { name: '伊拉克', flag: '🇮🇶', regex: new RegExp('🇮🇶|伊拉克|iraq', 'i'), icon: '' },
+  { name: '以色列', flag: '🇮🇱', regex: new RegExp('🇮🇱|以色列|israel', 'i'), icon: '' },
+  { name: '约旦', flag: '🇯🇴', regex: new RegExp('🇯🇴|约旦|jordan', 'i'), icon: '' },
+  { name: '哈萨克斯坦', flag: '🇰🇿', regex: new RegExp('🇰🇿|哈萨克斯坦|kazakhstan', 'i'), icon: '' },
+  { name: '科威特', flag: '🇰🇼', regex: new RegExp('🇰🇼|科威特|kuwait', 'i'), icon: '' },
+  { name: '吉尔吉斯斯坦', flag: '🇰🇬', regex: new RegExp('🇰🇬|吉尔吉斯斯坦|kyrgyzstan', 'i'), icon: '' },
+  { name: '黎巴嫩', flag: '🇱🇧', regex: new RegExp('🇱🇧|黎巴嫩|lebanon', 'i'), icon: '' },
+  { name: '马尔代夫', flag: '🇲🇻', regex: new RegExp('🇲🇻|马尔代夫|maldives', 'i'), icon: '' },
+  { name: '蒙古', flag: '🇲🇳', regex: new RegExp('🇲🇳|蒙古|mongolia', 'i'), icon: '' },
+  { name: '尼泊尔', flag: '🇳🇵', regex: new RegExp('🇳🇵|尼泊尔|nepal', 'i'), icon: '' },
+  { name: '朝鲜', flag: '🇰🇵', regex: new RegExp('🇰🇵|朝鲜|north[\\s_-]*korea|dprk', 'i'), icon: '' },
+  { name: '阿曼', flag: '🇴🇲', regex: new RegExp('🇴🇲|阿曼|oman', 'i'), icon: '' },
+  { name: '巴基斯坦', flag: '🇵🇰', regex: new RegExp('🇵🇰|巴基斯坦|pakistan', 'i'), icon: '' },
+  { name: '巴勒斯坦', flag: '🇵🇸', regex: new RegExp('🇵🇸|巴勒斯坦|palestine|west[\\s_-]*bank|gaza', 'i'), icon: '' },
+  { name: '卡塔尔', flag: '🇶🇦', regex: new RegExp('🇶🇦|卡塔尔|qatar', 'i'), icon: '' },
+  { name: '斯里兰卡', flag: '🇱🇰', regex: new RegExp('🇱🇰|斯里兰卡|sri[\\s_-]*lanka', 'i'), icon: '' },
+  { name: '叙利亚', flag: '🇸🇾', regex: new RegExp('🇸🇾|叙利亚|syria', 'i'), icon: '' },
+  { name: '塔吉克斯坦', flag: '🇹🇯', regex: new RegExp('🇹🇯|塔吉克斯坦|tajikistan', 'i'), icon: '' },
+  { name: '东帝汶', flag: '🇹🇱', regex: new RegExp('🇹🇱|东帝汶|timor[\\s_-]*leste|east[\\s_-]*timor', 'i'), icon: '' },
+  { name: '土库曼斯坦', flag: '🇹🇲', regex: new RegExp('🇹🇲|土库曼斯坦|turkmenistan', 'i'), icon: '' },
+  {
+    name: '阿联酋',
+    flag: '🇦🇪',
+    regex: new RegExp('🇦🇪|阿联酋|迪拜|阿布扎比|dubai|abu[\s_-]*dhabi|uae|united[\\s_-]*arab[\\s_-]*emirates', 'i'),
+    icon: '',
+  },
+  { name: '乌兹别克斯坦', flag: '🇺🇿', regex: new RegExp('🇺🇿|乌兹别克斯坦|uzbekistan', 'i'), icon: '' },
+  { name: '也门', flag: '🇾🇪', regex: new RegExp('🇾🇪|也门|yemen', 'i'), icon: '' },
+  { name: '澳门', flag: '🇲🇴', regex: new RegExp('🇲🇴|澳门|macau|macao', 'i'), icon: '' },
+  { name: '阿尔巴尼亚', flag: '🇦🇱', regex: new RegExp('🇦🇱|阿尔巴尼亚|albania', 'i'), icon: '' },
+  { name: '安道尔', flag: '🇦🇩', regex: new RegExp('🇦🇩|安道尔|andorra', 'i'), icon: '' },
+  { name: '白俄罗斯', flag: '🇧🇾', regex: new RegExp('🇧🇾|白俄罗斯|belarus', 'i'), icon: '' },
+  {
+    name: '波斯尼亚和黑塞哥维那',
+    flag: '🇧🇦',
+    regex: new RegExp('🇧🇦|波斯尼亚和黑塞哥维那|bosnia|bosnia[\\s_-]*and[\\s_-]*herzegovina', 'i'),
+    icon: '',
+  },
+  { name: '冰岛', flag: '🇮🇸', regex: new RegExp('🇮🇸|冰岛|iceland', 'i'), icon: '' },
+  { name: '列支敦士登', flag: '🇱🇮', regex: new RegExp('🇱🇮|列支敦士登|liechtenstein', 'i'), icon: '' },
+  { name: '摩尔多瓦', flag: '🇲🇩', regex: new RegExp('🇲🇩|摩尔多瓦|moldova', 'i'), icon: '' },
+  { name: '摩纳哥', flag: '🇲🇨', regex: new RegExp('🇲🇨|摩纳哥|monaco', 'i'), icon: '' },
+  { name: '黑山', flag: '🇲🇪', regex: new RegExp('🇲🇪|黑山|montenegro', 'i'), icon: '' },
+  { name: '北马其顿', flag: '🇲🇰', regex: new RegExp('🇲🇰|北马其顿|north[\\s_-]*macedonia|macedonia', 'i'), icon: '' },
+  { name: '挪威', flag: '🇳🇴', regex: new RegExp('🇳🇴|挪威|norway', 'i'), icon: '' },
+  { name: '圣马力诺', flag: '🇸🇲', regex: new RegExp('🇸🇲|圣马力诺|san[\\s_-]*marino', 'i'), icon: '' },
+  { name: '塞尔维亚', flag: '🇷🇸', regex: new RegExp('🇷🇸|塞尔维亚|serbia', 'i'), icon: '' },
+  { name: '瑞士', flag: '🇨🇭', regex: new RegExp('🇨🇭|瑞士|switzerland', 'i'), icon: '' },
+  { name: '乌克兰', flag: '🇺🇦', regex: new RegExp('🇺🇦|乌克兰|ukraine', 'i'), icon: '' },
+  { name: '梵蒂冈', flag: '🇻🇦', regex: new RegExp('🇻🇦|梵蒂冈|vatican', 'i'), icon: '' },
+  { name: '科索沃', flag: '🇽🇰', regex: new RegExp('🇽🇰|科索沃|kosovo', 'i'), icon: '' },
+  { name: '巴哈马', flag: '🇧🇸', regex: new RegExp('🇧🇸|巴哈马|bahamas', 'i'), icon: '' },
+  { name: '巴巴多斯', flag: '🇧🇧', regex: new RegExp('🇧🇧|巴巴多斯|barbados', 'i'), icon: '' },
+  { name: '伯利兹', flag: '🇧🇿', regex: new RegExp('🇧🇿|伯利兹|belize', 'i'), icon: '' },
+  { name: '哥斯达黎加', flag: '🇨🇷', regex: new RegExp('🇨🇷|哥斯达黎加|costa[\\s_-]*rica', 'i'), icon: '' },
+  { name: '古巴', flag: '🇨🇺', regex: new RegExp('🇨🇺|古巴|cuba', 'i'), icon: '' },
+  { name: '多米尼克', flag: '🇩🇲', regex: new RegExp('🇩🇲|多米尼克|dominica', 'i'), icon: '' },
+  { name: '多米尼加', flag: '🇩🇴', regex: new RegExp('🇩🇴|多米尼加|dominican[\\s_-]*republic|dominican', 'i'), icon: '' },
+  { name: '萨尔瓦多', flag: '🇸🇻', regex: new RegExp('🇸🇻|萨尔瓦多|el[\\s_-]*salvador', 'i'), icon: '' },
+  { name: '格林纳达', flag: '🇬🇩', regex: new RegExp('🇬🇩|格林纳达|grenada', 'i'), icon: '' },
+  { name: '危地马拉', flag: '🇬🇹', regex: new RegExp('🇬🇹|危地马拉|guatemala', 'i'), icon: '' },
+  { name: '海地', flag: '🇭🇹', regex: new RegExp('🇭🇹|海地|haiti', 'i'), icon: '' },
+  { name: '洪都拉斯', flag: '🇭🇳', regex: new RegExp('🇭🇳|洪都拉斯|honduras', 'i'), icon: '' },
+  { name: '牙买加', flag: '🇯🇲', regex: new RegExp('🇯🇲|牙买加|jamaica', 'i'), icon: '' },
+  { name: '尼加拉瓜', flag: '🇳🇮', regex: new RegExp('🇳🇮|尼加拉瓜|nicaragua', 'i'), icon: '' },
+  { name: '巴拿马', flag: '🇵🇦', regex: new RegExp('🇵🇦|巴拿马|panama', 'i'), icon: '' },
+  {
+    name: '圣基茨和尼维斯',
+    flag: '🇰🇳',
+    regex: new RegExp('🇰🇳|圣基茨和尼维斯|saint[\\s_-]*kitts|st[\\s_-]*kitts', 'i'),
+    icon: '',
+  },
+  { name: '圣卢西亚', flag: '🇱🇨', regex: new RegExp('🇱🇨|圣卢西亚|saint[\\s_-]*lucia|st[\\s_-]*lucia', 'i'), icon: '' },
+  {
+    name: '圣文森特和格林纳丁斯',
+    flag: '🇻🇨',
+    regex: new RegExp('🇻🇨|圣文森特和格林纳丁斯|saint[\\s_-]*vincent|st[\\s_-]*vincent', 'i'),
+    icon: '',
+  },
+  {
+    name: '特立尼达和多巴哥',
+    flag: '🇹🇹',
+    regex: new RegExp('🇹🇹|特立尼达和多巴哥|trinidad[\\s_-]*and[\\s_-]*tobago', 'i'),
+    icon: '',
+  },
+  {
+    name: '安提瓜和巴布达',
+    flag: '🇦🇬',
+    regex: new RegExp('🇦🇬|安提瓜和巴布达|antigua[\\s_-]*and[\\s_-]*barbuda', 'i'),
+    icon: '',
+  },
+  {
+    name: '哥伦比亚',
+    flag: '🇨🇴',
+    regex: new RegExp('🇨🇴|哥伦比亚|波哥大|麦德林|(?:^|[^A-Za-z])CO(?:$|[^A-Za-z])|bogot[aá]|medellin|colombia', 'i'),
+    icon: '',
+  },
+  { name: '智利', flag: '🇨🇱', regex: new RegExp('🇨🇱|智利|chile', 'i'), icon: '' },
+  { name: '秘鲁', flag: '🇵🇪', regex: new RegExp('🇵🇪|秘鲁|peru', 'i'), icon: '' },
+  { name: '乌拉圭', flag: '🇺🇾', regex: new RegExp('🇺🇾|乌拉圭|uruguay', 'i'), icon: '' },
+  { name: '巴拉圭', flag: '🇵🇾', regex: new RegExp('🇵🇾|巴拉圭|paraguay', 'i'), icon: '' },
+  { name: '玻利维亚', flag: '🇧🇴', regex: new RegExp('🇧🇴|玻利维亚|bolivia', 'i'), icon: '' },
+  { name: '厄瓜多尔', flag: '🇪🇨', regex: new RegExp('🇪🇨|厄瓜多尔|ecuador', 'i'), icon: '' },
+  { name: '委内瑞拉', flag: '🇻🇪', regex: new RegExp('🇻🇪|委内瑞拉|venezuela', 'i'), icon: '' },
+  { name: '圭亚那', flag: '🇬🇾', regex: new RegExp('🇬🇾|圭亚那|guyana', 'i'), icon: '' },
+  { name: '苏里南', flag: '🇸🇷', regex: new RegExp('🇸🇷|苏里南|suriname', 'i'), icon: '' },
+  {
+    name: '新西兰',
+    flag: '🇳🇿',
+    regex: new RegExp('🇳🇿|新西兰|new[\\s_-]*zealand|auckland|奥克兰|wellington|惠灵顿', 'i'),
+    icon: '',
+  },
+  { name: '斐济', flag: '🇫🇯', regex: new RegExp('🇫🇯|斐济|fiji', 'i'), icon: '' },
+  {
+    name: '巴布亚新几内亚',
+    flag: '🇵🇬',
+    regex: new RegExp('🇵🇬|巴布亚新几内亚|papua[\\s_-]*new[\\s_-]*guinea', 'i'),
+    icon: '',
+  },
+  { name: '所罗门群岛', flag: '🇸🇧', regex: new RegExp('🇸🇧|所罗门群岛|solomon[\\s_-]*islands', 'i'), icon: '' },
+  { name: '瓦努阿图', flag: '🇻🇺', regex: new RegExp('🇻🇺|瓦努阿图|vanuatu', 'i'), icon: '' },
+  { name: '萨摩亚', flag: '🇼🇸', regex: new RegExp('🇼🇸|萨摩亚|samoa', 'i'), icon: '' },
+  { name: '汤加', flag: '🇹🇴', regex: new RegExp('🇹🇴|汤加|tonga', 'i'), icon: '' },
+  { name: '基里巴斯', flag: '🇰🇮', regex: new RegExp('🇰🇮|基里巴斯|kiribati', 'i'), icon: '' },
+  { name: '图瓦卢', flag: '🇹🇻', regex: new RegExp('🇹🇻|图瓦卢|tuvalu', 'i'), icon: '' },
+  { name: '瑙鲁', flag: '🇳🇷', regex: new RegExp('🇳🇷|瑙鲁|nauru', 'i'), icon: '' },
+  { name: '帕劳', flag: '🇵🇼', regex: new RegExp('🇵🇼|帕劳|palau', 'i'), icon: '' },
+  { name: '马绍尔群岛', flag: '🇲🇭', regex: new RegExp('🇲🇭|马绍尔群岛|marshall[\\s_-]*islands', 'i'), icon: '' },
+  {
+    name: '密克罗尼西亚',
+    flag: '🇫🇲',
+    regex: new RegExp('🇫🇲|密克罗尼西亚|micronesia|federated[\\s_-]*states[\\s_-]*of[\\s_-]*micronesia', 'i'),
+    icon: '',
+  },
+  { name: '关岛', flag: '🇬🇺', regex: new RegExp('🇬🇺|关岛|guam', 'i'), icon: '' },
+  { name: '波多黎各', flag: '🇵🇷', regex: new RegExp('🇵🇷|波多黎各|puerto[\\s_-]*rico', 'i'), icon: '' },
+  { name: '百慕大', flag: '🇧🇲', regex: new RegExp('🇧🇲|百慕大|bermuda', 'i'), icon: '' },
+  { name: '格陵兰', flag: '🇬🇱', regex: new RegExp('🇬🇱|格陵兰|greenland', 'i'), icon: '' },
+  { name: '库拉索', flag: '🇨🇼', regex: new RegExp('🇨🇼|库拉索|curacao|curaçao', 'i'), icon: '' },
+  { name: '阿鲁巴', flag: '🇦🇼', regex: new RegExp('🇦🇼|阿鲁巴|aruba', 'i'), icon: '' },
+  { name: '开曼群岛', flag: '🇰🇾', regex: new RegExp('🇰🇾|开曼群岛|cayman[\\s_-]*islands', 'i'), icon: '' },
+  {
+    name: '英属维尔京群岛',
+    flag: '🇻🇬',
+    regex: new RegExp('🇻🇬|英属维尔京群岛|british[\\s_-]*virgin[\\s_-]*islands', 'i'),
+    icon: '',
+  },
+  {
+    name: '美属维尔京群岛',
+    flag: '🇻🇮',
+    regex: new RegExp('🇻🇮|美属维尔京群岛|us[\\s_-]*virgin[\\s_-]*islands|u\\.s\\.[\\s_-]*virgin[\\s_-]*islands', 'i'),
+    icon: '',
+  },
+  { name: '新喀里多尼亚', flag: '🇳🇨', regex: new RegExp('🇳🇨|新喀里多尼亚|new[\\s_-]*caledonia', 'i'), icon: '' },
+  { name: '法属波利尼西亚', flag: '🇵🇫', regex: new RegExp('🇵🇫|法属波利尼西亚|french[\\s_-]*polynesia', 'i'), icon: '' },
+  { name: '库克群岛', flag: '🇨🇰', regex: new RegExp('🇨🇰|库克群岛|cook[\\s_-]*islands', 'i'), icon: '' },
+  { name: '纽埃', flag: '🇳🇺', regex: new RegExp('🇳🇺|纽埃|niue', 'i'), icon: '' },
+];
+// @shared:end regionDefinitions
+
+// 定义倍率策略组
+const lowRateRegionName = '低倍率节点';
+const highRateRegionName = '高倍率节点';
+
+// @shared:begin rateRegionDefinitions — 由 Script/shared/rateRegionDefinitions.js 同步，请勿在此直接修改
+const rateRegionDefinitions = [
+  {
+    name: lowRateRegionName,
+    regex:
+      /^(?!.*(?:剩|期)).*(?:(?<!\d)0\.[0-5]|(?<=[ \[\(|｜丨∣┃\-‐–—−－﹣])0[*×✕✖⨯⨉x倍])|(?:(?<=[ \[\(|｜丨∣┃\-‐–—−－﹣])[*×✕✖⨯⨉x]0(?=[ \)\]]|倍|$))|^(?!.*(?:客户端|软件)).*下载|低倍|免费|(?<![A-Za-z])free(?![A-Za-z])/i,
+  },
+  {
+    name: highRateRegionName,
+    regex:
+      /(?<=[ \[\(|｜丨∣┃\-‐–—−－﹣])((?:[*×✕✖⨯⨉x]\s*(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?)|(?:(?<![\d.])(?:[2-9]\d*|[1-9]\d+)(?:\.\d+)?\s*(?:倍|[*×✕✖⨯⨉x])))/i,
+  },
+];
+// @shared:end rateRegionDefinitions
+
+// 全部策略组定义（地区 + 倍率），统一用于节点匹配与归类
+const allRegionDefinitions = [...regionDefinitions, ...rateRegionDefinitions];
+
+// Rule Providers 通用配置
+// @shared:begin ruleProviderCommonDomain — 由 Script/shared/ruleProviderCommonDomain.js 同步，请勿在此直接修改
+const ruleProviderCommonDomain = {
+  type: 'http',
+  behavior: 'domain',
+  format: 'mrs',
+  interval: 86400,
+  proxy: '默认代理', // 规则集经代理下载，不向 jsDelivr 暴露真实 IP
+  header: {
+    'User-Agent': ['mihomo'],
+  },
+};
+// @shared:end ruleProviderCommonDomain
+// @shared:begin ruleProviderCommonIpcidr — 由 Script/shared/ruleProviderCommonIpcidr.js 同步，请勿在此直接修改
+const ruleProviderCommonIpcidr = {
+  type: 'http',
+  behavior: 'ipcidr',
+  format: 'mrs',
+  interval: 86400,
+  proxy: '默认代理', // 规则集经代理下载，不向 jsDelivr 暴露真实 IP
+  header: {
+    'User-Agent': ['mihomo'],
+  },
+};
+// @shared:end ruleProviderCommonIpcidr
+
+// 定义基础 Rule Providers
+const baseRuleProviders = {
+  // --- 直连规则集 ---
+
+  private: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/private.mrs',
+    path: './ruleset/private.mrs',
+    'path-in-bundle': 'geo/geosite/private.mrs',
+  },
+  private_ip: {
+    ...ruleProviderCommonIpcidr,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs',
+    path: './ruleset/private_ip.mrs',
+    'path-in-bundle': 'geo/geoip/private.mrs',
+  },
+  games_cn: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-games@cn.mrs',
+    path: './ruleset/category-games@cn.mrs',
+    'path-in-bundle': 'geo/geosite/category-games@cn.mrs',
+  },
+  nvidia_cn: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/nvidia@cn.mrs',
+    path: './ruleset/nvidia@cn.mrs',
+    'path-in-bundle': 'geo/geosite/nvidia@cn.mrs',
+  },
+  apple_cn: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple@cn.mrs',
+    path: './ruleset/apple@cn.mrs',
+    'path-in-bundle': 'geo/geosite/apple@cn.mrs',
+  },
+  microsoft_cn: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/microsoft@cn.mrs',
+    path: './ruleset/microsoft@cn.mrs',
+    'path-in-bundle': 'geo/geosite/microsoft@cn.mrs',
+  },
+  'geolocation-cn': {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-cn.mrs',
+    path: './ruleset/geolocation-cn.mrs',
+    'path-in-bundle': 'geo/geosite/geolocation-cn.mrs',
+  },
+  cn_ip: {
+    ...ruleProviderCommonIpcidr,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cn.mrs',
+    path: './ruleset/cn_ip.mrs',
+    'path-in-bundle': 'geo/geoip/cn.mrs',
+  },
+
+  // --- 代理规则集 ---
+
+  'geolocation-!cn': {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs',
+    path: './ruleset/geolocation-!cn.mrs',
+    'path-in-bundle': 'geo/geosite/geolocation-!cn.mrs',
+  },
+
+  // --- 其他规则集 ---
+
+  fakeip_filter: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-stun.mrs',
+    path: './ruleset/category-stun.mrs',
+    'path-in-bundle': 'geo/geosite/category-stun.mrs',
+  },
+  cn: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs',
+    path: './ruleset/cn.mrs',
+    'path-in-bundle': 'geo/geosite/cn.mrs',
+  },
+  bilibili: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/bilibili.mrs',
+    path: './ruleset/bilibili.mrs',
+    'path-in-bundle': 'geo/geosite/bilibili.mrs',
+  },
+  biliintl: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/biliintl.mrs',
+    path: './ruleset/biliintl.mrs',
+    'path-in-bundle': 'geo/geosite/biliintl.mrs',
+  },
+  disney: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/disney.mrs',
+    path: './ruleset/disney.mrs',
+    'path-in-bundle': 'geo/geosite/disney.mrs',
+  },
+};
+
+// 策略组公共配置
+// @shared:begin groupBaseOption — 由 Script/shared/groupBaseOption.js 同步，请勿在此直接修改
+const groupBaseOption = {
+  interval: 600,
+  timeout: 3000,
+  url: 'https://www.apple.com/library/test/success.html',
+  lazy: true,
+  'max-failed-times': 3,
+  'empty-fallback': 'REJECT',
+};
+// @shared:end groupBaseOption
+
+// select策略组通用配置
+// @shared:begin selectBaseOption — 由 Script/shared/selectBaseOption.js 同步，请勿在此直接修改
+const selectBaseOption = {
+  ...groupBaseOption,
+  type: 'select',
+};
+// @shared:end selectBaseOption
+
+// url-test策略组通用配置
+// @shared:begin urlTestBaseOption — 由 Script/shared/urlTestBaseOption.js 同步，请勿在此直接修改
+const urlTestBaseOption = {
+  ...groupBaseOption,
+  type: 'url-test',
+  tolerance: 50,
+  'exclude-type': 'DIRECT',
+  hidden: true,
+};
+// @shared:end urlTestBaseOption
+
+// load-balance策略组通用配置
+const loadBalanceBaseOption = {
+  ...groupBaseOption,
+  type: 'load-balance',
+  strategy: 'sticky-sessions',
+  'exclude-type': 'DIRECT',
+  hidden: true,
+};
+
+// 定义基础策略组
+const baseGroups = [
+  {
+    name: '手动选择',
+    baseOption: selectBaseOption,
+    includeAll: true,
+  },
+  {
+    name: '自动选择',
+    baseOption: urlTestBaseOption,
+    includeAll: true,
+  },
+  {
+    name: '负载均衡',
+    baseOption: loadBalanceBaseOption,
+    includeAll: true,
+  },
+  {
+    name: '故障转移',
+    baseOption: {
+      ...groupBaseOption,
+      type: 'fallback',
+      'exclude-type': 'DIRECT',
+    },
+    includeAll: true,
+  },
+];
+
+// 定义分流策略组配置
+const serviceConfigs = [
+  ...baseGroups,
+  {
+    name: 'FCM',
+    baseOption: selectBaseOption,
+    providers: {
+      googlefcm: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/googlefcm.mrs',
+        path: './ruleset/googlefcm.mrs',
+        'path-in-bundle': 'geo/geosite/googlefcm.mrs',
+      },
+    },
+    rules: ['RULE-SET,googlefcm,FCM'],
+  },
+  {
+    name: 'YouTube',
+    baseOption: selectBaseOption,
+    providers: {
+      youtube: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/youtube.mrs',
+        path: './ruleset/youtube.mrs',
+        'path-in-bundle': 'geo/geosite/youtube.mrs',
+      },
+    },
+    rules: ['RULE-SET,youtube,YouTube'],
+  },
+  {
+    name: 'Google',
+    baseOption: selectBaseOption,
+    providers: {
+      google: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google.mrs',
+        path: './ruleset/google.mrs',
+        'path-in-bundle': 'geo/geosite/google.mrs',
+      },
+      google_ip: {
+        ...ruleProviderCommonIpcidr,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/google.mrs',
+        path: './ruleset/google_ip.mrs',
+        'path-in-bundle': 'geo/geoip/google.mrs',
+      },
+    },
+    rules: ['RULE-SET,google,Google', 'RULE-SET,google_ip,Google,no-resolve'],
+  },
+  {
+    name: 'Claude',
+    baseOption: selectBaseOption,
+    // 默认走美国节点。境外流量一律不直连，组内不提供「直连」，避免暴露真实 IP。
+    defaultSelected: '美国',
+    providers: {
+      anthropic: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/anthropic.mrs',
+        path: './ruleset/anthropic.mrs',
+        'path-in-bundle': 'geo/geosite/anthropic.mrs',
+      },
+    },
+    rules: [
+      // 官方 geosite:anthropic：anthropic.com、claude.ai/com/dev、clau.de、mcp、usercontent。
+      'RULE-SET,anthropic,Claude',
+      // 控制台登录走 auth0，官方名单未收录。
+      'DOMAIN,anthropic.auth0.com,Claude',
+      'DOMAIN,anthropic.com.cdn.cloudflare.net,Claude',
+      // 只钉这一个 Datadog 接收端，不用关键字，避免把别的网站拖进来。
+      'DOMAIN,browser-intake-us5-datadoghq.com,Claude',
+      // AS399358 / 160.79.104.0/21 属于 Anthropic。IPv6 只用已宣告的两条 /48，不用 /32。
+      'IP-CIDR,160.79.104.0/21,Claude,no-resolve',
+      'IP-CIDR6,2607:6bc0::/48,Claude,no-resolve',
+      'IP-CIDR6,2607:6bc0:11::/48,Claude,no-resolve',
+      'IP-ASN,399358,Claude,no-resolve',
+    ],
+  },
+  {
+    name: 'AI',
+    baseOption: selectBaseOption,
+    defaultSelected: '美国',
+    providers: {
+      ai: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-!cn.mrs',
+        path: './ruleset/ai.mrs',
+        'path-in-bundle': 'geo/geosite/category-ai-!cn.mrs',
+      },
+    },
+    rules: ['RULE-SET,ai,AI'],
+  },
+  {
+    name: 'Microsoft',
+    baseOption: selectBaseOption,
+    providers: {
+      github: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/github.mrs',
+        path: './ruleset/github.mrs',
+        'path-in-bundle': 'geo/geosite/github.mrs',
+      },
+      microsoft: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/microsoft.mrs',
+        path: './ruleset/microsoft.mrs',
+        'path-in-bundle': 'geo/geosite/microsoft.mrs',
+      },
+    },
+    rules: ['RULE-SET,github,默认代理', 'RULE-SET,microsoft,Microsoft'],
+  },
+  {
+    name: 'Apple',
+    baseOption: selectBaseOption,
+    providers: {
+      apple: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple.mrs',
+        path: './ruleset/apple.mrs',
+        'path-in-bundle': 'geo/geosite/apple.mrs',
+      },
+    },
+    rules: ['RULE-SET,apple,Apple'],
+  },
+  {
+    name: 'Telegram',
+    baseOption: selectBaseOption,
+    providers: {
+      telegram: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/telegram.mrs',
+        path: './ruleset/telegram.mrs',
+        'path-in-bundle': 'geo/geosite/telegram.mrs',
+      },
+      telegram_ip: {
+        ...ruleProviderCommonIpcidr,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/telegram.mrs',
+        path: './ruleset/telegram_ip.mrs',
+        'path-in-bundle': 'geo/geoip/telegram.mrs',
+      },
+    },
+    rules: ['RULE-SET,telegram,Telegram', 'RULE-SET,telegram_ip,Telegram,no-resolve'],
+  },
+  {
+    name: 'Steam',
+    baseOption: selectBaseOption,
+    providers: {
+      steam: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam.mrs',
+        path: './ruleset/steam.mrs',
+        'path-in-bundle': 'geo/geosite/steam.mrs',
+      },
+    },
+    rules: ['RULE-SET,steam,Steam'],
+  },
+  {
+    name: 'TikTok',
+    baseOption: selectBaseOption,
+    defaultSelected: '日本',
+    providers: {
+      tiktok: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/tiktok.mrs',
+        path: './ruleset/tiktok.mrs',
+        'path-in-bundle': 'geo/geosite/tiktok.mrs',
+      },
+    },
+    rules: ['RULE-SET,tiktok,TikTok'],
+  },
+  {
+    name: 'Twitter',
+    baseOption: selectBaseOption,
+    providers: {
+      twitter: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/twitter.mrs',
+        path: './ruleset/twitter.mrs',
+        'path-in-bundle': 'geo/geosite/twitter.mrs',
+      },
+      twitter_ip: {
+        ...ruleProviderCommonIpcidr,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/twitter.mrs',
+        path: './ruleset/twitter_ip.mrs',
+        'path-in-bundle': 'geo/geoip/twitter.mrs',
+      },
+    },
+    rules: ['RULE-SET,twitter,Twitter', 'RULE-SET,twitter_ip,Twitter,no-resolve'],
+  },
+  {
+    name: 'Meta',
+    baseOption: selectBaseOption,
+    providers: {
+      meta: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/meta.mrs',
+        path: './ruleset/meta.mrs',
+        'path-in-bundle': 'geo/geosite/meta.mrs',
+      },
+      facebook_ip: {
+        ...ruleProviderCommonIpcidr,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/facebook.mrs',
+        path: './ruleset/facebook_ip.mrs',
+        'path-in-bundle': 'geo/geoip/facebook.mrs',
+      },
+    },
+    rules: ['RULE-SET,meta,Meta', 'RULE-SET,facebook_ip,Meta,no-resolve'],
+  },
+  {
+    name: 'Line',
+    baseOption: selectBaseOption,
+    providers: {
+      line: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/line.mrs',
+        path: './ruleset/line.mrs',
+        'path-in-bundle': 'geo/geosite/line.mrs',
+      },
+    },
+    rules: ['RULE-SET,line,Line'],
+  },
+  {
+    name: 'Netflix',
+    baseOption: selectBaseOption,
+    providers: {
+      netflix: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/netflix.mrs',
+        path: './ruleset/netflix.mrs',
+        'path-in-bundle': 'geo/geosite/netflix.mrs',
+      },
+      netflix_ip: {
+        ...ruleProviderCommonIpcidr,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/netflix.mrs',
+        path: './ruleset/netflix_ip.mrs',
+        'path-in-bundle': 'geo/geoip/netflix.mrs',
+      },
+    },
+    rules: ['RULE-SET,netflix,Netflix', 'RULE-SET,netflix_ip,Netflix,no-resolve'],
+  },
+  {
+    name: 'Emby',
+    baseOption: selectBaseOption,
+    providers: {
+      emby: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-emby.mrs',
+        path: './ruleset/category-emby.mrs',
+        'path-in-bundle': 'geo/geosite/category-emby.mrs',
+      },
+    },
+    rules: [
+      'RULE-SET,emby,Emby',
+      'DOMAIN-SUFFIX,mb3admin.com,Emby',
+      'DOMAIN-SUFFIX,nubebelle.com,Emby',
+      'DOMAIN-KEYWORD,emby,Emby',
+      'PROCESS-NAME,com.mb.android,Emby',
+      'PROCESS-NAME,tv.emby.embyatv,Emby',
+      'PROCESS-NAME,com.hush.yamby,Emby',
+      'PROCESS-NAME,com.jellycine.app,Emby',
+      'PROCESS-NAME,com.mountains.hills,Emby',
+      'PROCESS-NAME,RodelPlayer.App.exe,Emby',
+      'PROCESS-NAME,com.feifeiduck.capyplayer,Emby',
+    ],
+  },
+  {
+    name: 'PikPak',
+    baseOption: selectBaseOption,
+    providers: {
+      pikpak: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/pikpak.mrs',
+        path: './ruleset/pikpak.mrs',
+        'path-in-bundle': 'geo/geosite/pikpak.mrs',
+      },
+    },
+    rules: ['RULE-SET,pikpak,PikPak'],
+  },
+  {
+    name: 'Spotify',
+    baseOption: selectBaseOption,
+    providers: {
+      spotify: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/spotify.mrs',
+        path: './ruleset/spotify.mrs',
+        'path-in-bundle': 'geo/geosite/spotify.mrs',
+      },
+    },
+    rules: ['RULE-SET,spotify,Spotify'],
+  },
+  {
+    name: 'Crypto',
+    baseOption: selectBaseOption,
+    defaultSelected: '日本',
+    providers: {
+      cryptocurrency: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-cryptocurrency.mrs',
+        path: './ruleset/cryptocurrency.mrs',
+        'path-in-bundle': 'geo/geosite/category-cryptocurrency.mrs',
+      },
+    },
+    rules: ['RULE-SET,cryptocurrency,Crypto'],
+  },
+  {
+    name: 'EHentai',
+    baseOption: selectBaseOption,
+    defaultSelected: '美国',
+    providers: {
+      ehentai: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/ehentai.mrs',
+        path: './ruleset/ehentai.mrs',
+        'path-in-bundle': 'geo/geosite/ehentai.mrs',
+      },
+    },
+    rules: ['RULE-SET,ehentai,EHentai'],
+  },
+  {
+    name: '远控工具',
+    baseOption: selectBaseOption,
+    fixedProxies: ['默认代理', 'REJECT-DROP'],
+    rules: [
+      'PROCESS-NAME-WILDCARD,*AnyDesk*,远控工具',
+      'PROCESS-NAME-WILDCARD,*ToDesk*,远控工具',
+      'PROCESS-NAME-WILDCARD,*TeamViewer*,远控工具',
+      'PROCESS-NAME-WILDCARD,*RustDesk*,远控工具',
+      'PROCESS-NAME-WILDCARD,*rustdesk*,远控工具',
+      'PROCESS-NAME-WILDCARD,*tailscale*,远控工具',
+      'PROCESS-NAME-WILDCARD,*zerotier*,远控工具',
+      'PROCESS-NAME-WILDCARD,*ngrok*,远控工具',
+      'PROCESS-NAME-WILDCARD,*frpc*,远控工具',
+      'PROCESS-NAME-WILDCARD,*frps*,远控工具',
+      'PROCESS-NAME-WILDCARD,*cloudflared*,远控工具',
+      'PROCESS-NAME-WILDCARD,*natapp*,远控工具',
+      'PROCESS-NAME-WILDCARD,*nblink*,远控工具',
+    ],
+  },
+  {
+    name: 'AdBlock',
+    baseOption: selectBaseOption,
+    reject: true,
+    providers: {
+      adblockmihomolite: {
+        ...ruleProviderCommonDomain,
+        url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ads-all.mrs',
+        path: './ruleset/category-ads-all.mrs',
+        'path-in-bundle': 'geo/geosite/category-ads-all.mrs',
+      },
+    },
+    rules: ['RULE-SET,adblockmihomolite,AdBlock'],
+  },
+];
+
+// ---节点过滤、重命名及验证---
+
+/**
+ * 节点匹配缓存，避免重复执行正则
+ */
+// 繁体 → 简体折叠（仅用于地区匹配，不改动节点原名）。大陆/港台机场常用繁体命名（台灣、美國、韓國……），
+// 地区正则均为简体，匹配前先折叠，一处覆盖全部 200+ 地区。
+// @shared:begin traditionalToSimplified — 由 Script/shared/traditionalToSimplified.js 同步，请勿在此直接修改
+const traditionalToSimplified = {
+  灣: '湾',
+  國: '国',
+  臺: '台',
+  東: '东',
+  島: '岛',
+  亞: '亚',
+  倫: '伦',
+  蘭: '兰',
+  馬: '马',
+  賓: '宾',
+  紐: '纽',
+  約: '约',
+  達: '达',
+  磯: '矶',
+  聖: '圣',
+  門: '门',
+  韓: '韩',
+  羅: '罗',
+  蘇: '苏',
+  聯: '联',
+  愛: '爱',
+  爾: '尔',
+  烏: '乌',
+  薩: '萨',
+  華: '华',
+  頓: '顿',
+  維: '维',
+  緬: '缅',
+  廣: '广',
+};
+// @shared:end traditionalToSimplified
+const traditionalRegex = new RegExp('[' + Object.keys(traditionalToSimplified).join('') + ']', 'g');
+// provider 模式下地区正则由 Mihomo 在运行时执行，无法预先折叠：把每个有繁体对应字的简体字展开成字符组（湾 → [湾灣]）。
+const simplifiedToTraditional = {};
+for (const [trad, simp] of Object.entries(traditionalToSimplified)) {
+  simplifiedToTraditional[simp] = (simplifiedToTraditional[simp] || simp) + trad;
+}
+const simplifiedRegex = new RegExp('[' + Object.keys(simplifiedToTraditional).join('') + ']', 'g');
+// @shared:begin expandTraditional — 由 Script/shared/expandTraditional.js 同步，请勿在此直接修改
+function expandTraditional(source) {
+  return source.replace(simplifiedRegex, (ch) => '[' + simplifiedToTraditional[ch] + ']');
+}
+// @shared:end expandTraditional
+// @shared:begin foldTraditional — 由 Script/shared/foldTraditional.js 同步，请勿在此直接修改
+function foldTraditional(text) {
+  return String(text).replace(traditionalRegex, (ch) => traditionalToSimplified[ch]);
+}
+// @shared:end foldTraditional
+
+const regionMatchCache = new Map();
+// @shared:begin getMatchedRegions — 由 Script/shared/getMatchedRegions.js 同步，请勿在此直接修改
+function getMatchedRegions(proxyName) {
+  if (regionMatchCache.has(proxyName)) {
+    return regionMatchCache.get(proxyName);
+  }
+
+  const text = foldTraditional(proxyName);
+  const regions = allRegionDefinitions.filter((region) => region.regex.test(text));
+  const geoMatches = regions.filter((region) => regionDefinitions.includes(region));
+  const otherMatches = regions.filter((region) => !regionDefinitions.includes(region));
+  let selectedGeo = geoMatches;
+  if (geoMatches.length > 1) {
+    const matchLength = (region) => {
+      const match = text.match(region.regex);
+      return match ? match[0].length : 0;
+    };
+    const bestLen = Math.max(...geoMatches.map(matchLength));
+    selectedGeo = geoMatches.filter((region) => matchLength(region) === bestLen);
+  }
+  const result = [...selectedGeo, ...otherMatches];
+  regionMatchCache.set(proxyName, result);
+
+  return result;
+}
+// @shared:end getMatchedRegions
+
+/**
+ * 标准化节点名称：补全地区国旗、折叠多余空格，并预缓存匹配结果
+ */
+const flagRegex = /[\u{1F1E6}-\u{1F1FF}]{2}/u;
+// @shared:begin normalizeProxyName — 由 Script/shared/normalizeProxyName.js 同步，请勿在此直接修改
+function normalizeProxyName(proxy) {
+  const originalName = proxy.name;
+
+  const flag = originalName.match(flagRegex)?.[0];
+
+  const nameWithoutFlag = (flag ? originalName.replace(flag, '') : originalName).replace(/\s+/g, ' ').trim();
+
+  const matchedRegions = getMatchedRegions(originalName);
+
+  const regionFlag = flag || matchedRegions.find((region) => region.flag)?.flag;
+
+  const normalizedName = regionFlag ? `${regionFlag} ${nameWithoutFlag}` : nameWithoutFlag;
+
+  if (normalizedName !== originalName) {
+    regionMatchCache.set(normalizedName, matchedRegions);
+  }
+
+  const renamed = normalizedName === originalName ? proxy : { ...proxy, name: normalizedName };
+  return applyKernelProxyDefaults(renamed);
+}
+// @shared:end normalizeProxyName
+
+// @shared:begin applyKernelProxyDefaults — 由 Script/shared/applyKernelProxyDefaults.js 同步，请勿在此直接修改
+/**
+ * Mihomo v1.19.32 起 vmess.cipher 没有 omitempty，缺字段会让整份配置解析失败。
+ * 机场订阅经常省略它；Clash 历史默认值是 auto。这里只补缺失字段，不改已有值。
+ */
+function applyKernelProxyDefaults(proxy) {
+  if (!proxy || typeof proxy !== 'object') return proxy;
+  const type = String(proxy.type || '').toLowerCase();
+  if (type === 'vmess' && !proxy.cipher) {
+    return { ...proxy, cipher: 'auto' };
+  }
+  return proxy;
+}
+// @shared:end applyKernelProxyDefaults
+
+// @shared:begin fixDialerProxy — 由 Script/shared/fixDialerProxy.js 同步，请勿在此直接修改
+/**
+ * 修复 dialer-proxy 引用：目标被重命名则更新，被移除或不存在则删除引用
+ */
+function fixDialerProxy(proxy, renameMap, normalizedProxyNames) {
+  const target = proxy['dialer-proxy'];
+  if (!target) return proxy;
+
+  if (renameMap.has(target)) {
+    return { ...proxy, 'dialer-proxy': renameMap.get(target) };
+  }
+
+  if (normalizedProxyNames.has(target)) {
+    return proxy;
+  }
+
+  const copy = { ...proxy };
+  delete copy['dialer-proxy'];
+  return copy;
+}
+// @shared:end fixDialerProxy
+
+// @shared:begin getIpVersionPreference — 由 Script/shared/getIpVersionPreference.js 同步，请勿在此直接修改
+/**
+ * 读取代理 IP 版本偏好：仅其中一个开关开启时返回对应偏好，
+ * 同时开启或同时关闭时返回 null（不应用任何偏好，节点保持原样）
+ */
+function getIpVersionPreference() {
+  const ipv4PreferEnabled = activeRuleOptions.代理IPV4优先;
+  const ipv6PreferEnabled = activeRuleOptions.代理IPV6优先;
+
+  if (ipv4PreferEnabled && !ipv6PreferEnabled) return 'ipv4-prefer';
+  if (ipv6PreferEnabled && !ipv4PreferEnabled) return 'ipv6-prefer';
+  return null;
+}
+// @shared:end getIpVersionPreference
+
+// @shared:begin getReservedProxyNames — 由 Script/shared/getReservedProxyNames.js 同步，请勿在此直接修改
+/**
+ * 保留名：策略组、地区组、内置节点等名称。节点或自定义节点与之重名会让内核拒绝配置，需要改名避开。
+ */
+function getReservedProxyNames() {
+  const names = new Set([
+    '默认代理',
+    'GLOBAL',
+    '漏网之鱼',
+    '直连',
+    '其他节点',
+    '自建节点',
+    '链式落地',
+    dialerProxyName,
+    'REJECT',
+    'REJECT-DROP',
+    'PASS',
+    ...directProxies.map((proxy) => proxy.name),
+    ...baseGroups.map((group) => group.name),
+    ...serviceConfigs.map((group) => group.name),
+    ...regionDefinitions.map((region) => region.name),
+    ...rateRegionDefinitions.map((region) => region.name),
+  ]);
+  for (const region of allRegionDefinitions) names.add(region.name + '-自动选择');
+  return names;
+}
+// @shared:end getReservedProxyNames
+
+// @shared:begin reserveProxyName — 由 Script/shared/reserveProxyName.js 同步，请勿在此直接修改
+/**
+ * 若 name 与保留名冲突，返回「节点-<name>」形式且未被占用的安全名称；否则原样返回。
+ */
+function reserveProxyName(name, reservedNames, usedNames) {
+  if (!reservedNames.has(name)) return name;
+  let candidate = '节点-' + name;
+  let index = 2;
+  while (usedNames.has(candidate) || reservedNames.has(candidate)) {
+    candidate = '节点-' + name + '-' + index++;
+  }
+  return candidate;
+}
+// @shared:end reserveProxyName
+
+// @shared:begin filterAndNormalizeProxies — 由 Script/shared/filterAndNormalizeProxies.js 同步，请勿在此直接修改
+/**
+ * 过滤并标准化节点：剔除内置/信息节点、按配置过滤、去重、修复 dialer-proxy 引用，空列表时抛错
+ */
+function filterAndNormalizeProxies(config) {
+  regionMatchCache.clear();
+
+  const filterLowRateProxiesEnabled = activeRuleOptions.过滤低倍率节点;
+  const filterHighRateProxiesEnabled = activeRuleOptions.过滤高倍率节点;
+  const filterNonRegionProxiesEnabled = activeRuleOptions.过滤非地区节点;
+
+  const lowRateRegex = filterLowRateProxiesEnabled
+    ? rateRegionDefinitions.find((r) => r.name === lowRateRegionName)?.regex
+    : null;
+  const highRateRegex = filterHighRateProxiesEnabled
+    ? rateRegionDefinitions.find((r) => r.name === highRateRegionName)?.regex
+    : null;
+
+  const originalProxies = config.proxies || [];
+
+  const filteredRawProxies = originalProxies.filter((proxy) => {
+    const type = String(proxy.type ?? '').toLowerCase();
+    if (type === 'direct' || type === 'reject' || type === 'rematch') return false;
+
+    if (lowRateRegex?.test(proxy.name) || highRateRegex?.test(proxy.name)) return false;
+
+    if (!filterNonRegionProxiesEnabled) return true;
+
+    const isRegionProxy = getMatchedRegions(proxy.name).some((region) => regionDefinitions.includes(region));
+
+    if (strongExcludeFilter.test(proxy.name)) return false;
+    return isRegionProxy || !excludeFilter.test(proxy.name);
+  });
+
+  const renameMap = new Map();
+  const normalizedProxies = [];
+  const uniqueNames = new Set();
+  // 保留名集合与节点无关，循环外构建一次即可（逐节点重建在上千节点时占用大半耗时，QuickJS 下尤甚）。
+  const reservedNames = getReservedProxyNames();
+
+  for (const rawProxy of filteredRawProxies) {
+    const normalized = normalizeProxyName(rawProxy);
+    const safeName = reserveProxyName(normalized.name, reservedNames, uniqueNames);
+    // 引用修复必须指向最终安全名称，而不仅是标准化后的中间名称。
+    // 对重复原名只保留第一次映射，避免后续重复节点覆盖已有引用目标。
+    if (!renameMap.has(rawProxy.name)) {
+      renameMap.set(rawProxy.name, safeName);
+    }
+    const safeProxy = safeName === normalized.name ? normalized : { ...normalized, name: safeName };
+    if (!uniqueNames.has(safeName)) {
+      uniqueNames.add(safeName);
+      normalizedProxies.push(safeProxy);
+    }
+  }
+
+  const normalizedProxyNames = new Set(normalizedProxies.map((p) => p.name));
+
+  const filteredProxies = normalizedProxies.map((proxy) => fixDialerProxy(proxy, renameMap, normalizedProxyNames));
+
+  if (!filteredProxies.length) {
+    throw new Error('配置文件中未找到任何代理节点，请使用机场提供的配置文件进行覆写');
+  }
+
+  const ipVersionPreference = getIpVersionPreference();
+  if (ipVersionPreference) {
+    return filteredProxies.map((proxy) =>
+      proxy['ip-version'] === ipVersionPreference ? proxy : { ...proxy, 'ip-version': ipVersionPreference },
+    );
+  }
+
+  return filteredProxies;
+}
+// @shared:end filterAndNormalizeProxies
+
+// @shared:begin filterProviderVisibleProxies — 由 Script/shared/filterProviderVisibleProxies.js 同步，请勿在此直接修改
+function filterProviderVisibleProxies(config) {
+  // provider 节点本体由 mihomo 在脚本执行后加载；脚本阶段只能使用配置中已经可见的
+  // proxies 判断哪些地区真实存在。这里沿用原有过滤条件，但绝不标准化/改名，
+  // 因为 provider 模式要求原始节点信息原样保留。
+  regionMatchCache.clear();
+
+  const filterLowRateProxiesEnabled = activeRuleOptions.过滤低倍率节点;
+  const filterHighRateProxiesEnabled = activeRuleOptions.过滤高倍率节点;
+  const filterNonRegionProxiesEnabled = activeRuleOptions.过滤非地区节点;
+
+  const lowRateRegex = filterLowRateProxiesEnabled
+    ? rateRegionDefinitions.find((r) => r.name === lowRateRegionName)?.regex
+    : null;
+  const highRateRegex = filterHighRateProxiesEnabled
+    ? rateRegionDefinitions.find((r) => r.name === highRateRegionName)?.regex
+    : null;
+
+  const originalProxies = Array.isArray(config.proxies) ? config.proxies : [];
+  const visible = [];
+  const names = new Set();
+
+  for (const proxy of originalProxies) {
+    if (!proxy || typeof proxy !== 'object') continue;
+
+    const type = String(proxy.type ?? '').toLowerCase();
+    if (type === 'direct' || type === 'reject' || type === 'rematch') continue;
+
+    const name = String(proxy.name ?? '');
+    if (!name) continue;
+
+    if (lowRateRegex?.test(name) || highRateRegex?.test(name)) continue;
+
+    if (filterNonRegionProxiesEnabled) {
+      const isRegionProxy = getMatchedRegions(name).some((region) => regionDefinitions.includes(region));
+      if (strongExcludeFilter.test(name)) continue;
+      if (!isRegionProxy && excludeFilter.test(name)) continue;
+    }
+
+    if (!names.has(name)) {
+      names.add(name);
+      visible.push(proxy);
+    }
+  }
+
+  return visible;
+}
+// @shared:end filterProviderVisibleProxies
+
+// ---构建地区组和倍率组---
+
+// @shared:begin createRegionGroup — 由 Script/shared/createRegionGroup.js 同步，请勿在此直接修改
+/**
+ * 构建地区策略组，可附带自动选择组
+ */
+function createRegionGroup(name, icon, proxies) {
+  const generateRegionAutoSelectEnabled = activeRuleOptions.生成地区自动选择组;
+  const hideManualSelectGroupEnabled = activeRuleOptions.隐藏地区手动选择组;
+
+  if (generateRegionAutoSelectEnabled) {
+    const urlTestName = `${name}-自动选择`;
+    return [
+      {
+        ...urlTestBaseOption,
+        name: urlTestName,
+        proxies,
+      },
+      {
+        ...selectBaseOption,
+        name,
+        icon,
+        proxies: [...proxies, urlTestName],
+        hidden: hideManualSelectGroupEnabled,
+      },
+    ];
+  }
+  return [
+    {
+      ...selectBaseOption,
+      name,
+      icon,
+      proxies,
+      hidden: hideManualSelectGroupEnabled,
+    },
+  ];
+}
+// @shared:end createRegionGroup
+
+// @shared:begin buildRegionGroups — 由 Script/shared/buildRegionGroups.js 同步，请勿在此直接修改
+/**
+ * 将节点按地区/倍率归类，构建地区策略组、倍率策略组与“其他节点”组
+ */
+function buildRegionGroups(filteredProxies, customProxies) {
+  const generateRateGroupEnabled = activeRuleOptions.生成倍率组;
+
+  const regionGroups = Object.fromEntries(allRegionDefinitions.map(({ name }) => [name, []]));
+  const otherProxies = [];
+
+  for (const proxy of [...filteredProxies, ...customProxies]) {
+    const matchedRegions = getMatchedRegions(proxy.name);
+    const isRegionProxy = matchedRegions.some((region) => regionDefinitions.includes(region));
+
+    for (const region of matchedRegions) {
+      regionGroups[region.name].push(proxy.name);
+    }
+
+    if (!isRegionProxy) {
+      otherProxies.push(proxy.name);
+    }
+  }
+  const generatedRegionGroups = allRegionDefinitions
+    .filter((r) => regionGroups[r.name].length > 0 && (generateRateGroupEnabled || !rateRegionDefinitions.includes(r)))
+    .flatMap((r) => createRegionGroup(r.name, r.icon, regionGroups[r.name]));
+
+  if (otherProxies.length > 0) {
+    generatedRegionGroups.push(
+      ...createRegionGroup(
+        '其他节点',
+        '',
+        otherProxies,
+      ),
+    );
+  }
+
+  return generatedRegionGroups;
+}
+// @shared:end buildRegionGroups
+
+// ---构建自定义节点组---
+
+/**
+ * 处理自定义节点：标准化名称、与订阅节点重名时添加“自建-”前缀、内部去重，
+ * 并构建“自建节点”策略组。
+ * 自定义节点不参与订阅节点过滤，也不参与 hosts 改写及 DNS 域名处理。
+ */
+function buildCustomizeGroups(filteredProxies, customizeList = customizeProxies) {
+  const chainEnabled = activeRuleOptions.链式代理;
+
+  if (!customizeList.length) {
+    if (chainEnabled && !activeChainLanding) {
+      throw new Error('启用失败，请在脚本中添加自定义节点后尝试');
+    }
+    return { customProxies: [], customProxyNames: [], customGroup: null };
+  }
+
+  const usedNames = new Set(filteredProxies.map((p) => p.name));
+  const reservedNames = getReservedProxyNames();
+  const customPrefix = '自建-';
+  const customProxies = [];
+
+  for (const proxy of customizeList) {
+    const normalized = normalizeProxyName(proxy);
+    let name = normalized.name;
+    while (usedNames.has(name) || reservedNames.has(name)) {
+      name = normalizeProxyName({ name: `${customPrefix}${name}` }).name.replace(`${customPrefix} `, customPrefix);
+    }
+    usedNames.add(name);
+
+    let customProxy = name === normalized.name ? normalized : { ...normalized, name };
+    if (chainEnabled && customProxy['dialer-proxy'] !== dialerProxyName) {
+      customProxy = { ...customProxy, 'dialer-proxy': dialerProxyName };
+    }
+    customProxies.push(customProxy);
+  }
+
+  const customProxyNames = customProxies.map((p) => p.name);
+
+  const customGroup = {
+    ...selectBaseOption,
+    name: chainEnabled ? '链式落地' : '自建节点',
+    proxies: customProxyNames,
+  };
+
+  return {
+    customProxies,
+    customProxyNames,
+    customGroup,
+  };
+}
+
+// ---构建基础策略组和分流策略组---
+
+/**
+ * 构建基础/分流策略组/部分节点组、GLOBAL 组与规则集，并汇总分流规则
+ */
+function buildFunctionalGroups(filteredProxies, generatedRegionGroups, customizeInfo) {
+  const minimalModeEnabled = activeRuleOptions.极简模式;
+  const addAllNodesToServiceGroupsEnabled = activeRuleOptions.分流组添加所有节点;
+  const chainEnabled = activeRuleOptions.链式代理;
+  const hideManualSelectGroupEnabled = activeRuleOptions.隐藏地区手动选择组;
+
+  const functionalGroups = [];
+  const functionalRules = [];
+  const finalRuleProviders = { ...baseRuleProviders };
+
+  const { customProxyNames = [], customGroup = null } = customizeInfo || {};
+  const filteredProxyNames = filteredProxies.map((p) => p.name);
+  const allProxiesNames = [...customProxyNames, ...filteredProxyNames];
+  const groupNamesOfSelect = generatedRegionGroups.filter((g) => g.type === 'select').map((g) => g.name);
+  const baseGroupNames = baseGroups.filter((g) => activeRuleOptions[g.name]).map((g) => g.name);
+  const customGroupNames = customGroup ? [customGroup.name] : [];
+
+  const chainGroup =
+    chainEnabled && customGroup
+      ? {
+          ...selectBaseOption,
+          name: dialerProxyName,
+          proxies: filteredProxyNames,
+        }
+      : null;
+
+  if (minimalModeEnabled) {
+    const defaultGroup = {
+      ...selectBaseOption,
+      name: '默认代理',
+      proxies: allProxiesNames,
+    };
+    const finalRuleProviders = { ...baseRuleProviders };
+    const directGroup = {
+      ...selectBaseOption,
+      name: '直连',
+      proxies: [...directProxies.map((p) => p.name)],
+      hidden: true,
+    };
+    const globalGroup = {
+      ...selectBaseOption,
+      name: 'GLOBAL',
+      proxies: ['默认代理', ...customGroupNames, ...(chainGroup ? [chainGroup.name] : [])],
+    };
+    return {
+      globalGroup,
+      functionalGroups: [defaultGroup],
+      functionalRules: [],
+      finalRuleProviders,
+      chainGroup,
+      directGroup,
+    };
+  }
+
+  functionalGroups.push({
+    ...selectBaseOption,
+    name: '默认代理',
+    proxies: [...groupNamesOfSelect, ...baseGroupNames, ...customGroupNames],
+  });
+
+  const orderedServiceConfigs = [
+    ...serviceConfigs.filter((svc) => svc.name === 'AdBlock'),
+    ...serviceConfigs.filter((svc) => svc.name !== 'AdBlock'),
+  ];
+  for (const svc of orderedServiceConfigs) {
+    if (!activeRuleOptions[svc.name]) continue;
+
+    functionalRules.push(...(svc.rules || []));
+    Object.assign(finalRuleProviders, svc.providers || {});
+  }
+
+  for (const svc of serviceConfigs) {
+    if (!activeRuleOptions[svc.name]) continue;
+
+    let groupProxies = [];
+    if (svc.fixedProxies) {
+      groupProxies = [...svc.fixedProxies];
+    } else if (svc.includeAll) {
+      groupProxies = [...allProxiesNames];
+    } else if (svc.reject) {
+      groupProxies = ['REJECT', 'REJECT-DROP', 'PASS'];
+    } else {
+      groupProxies = !addAllNodesToServiceGroupsEnabled
+        ? ['默认代理', ...customGroupNames, ...baseGroupNames, ...groupNamesOfSelect]
+        : ['默认代理', ...customGroupNames, ...baseGroupNames, ...groupNamesOfSelect, ...allProxiesNames];
+    }
+
+    functionalGroups.push({
+      ...svc.baseOption,
+      name: svc.name,
+      icon: svc.icon,
+      proxies: groupProxies,
+      ...(svc.defaultSelected !== undefined && {
+        'default-selected': svc.defaultSelected,
+      }),
+    });
+  }
+
+  functionalGroups.push({
+    ...selectBaseOption,
+    name: '漏网之鱼',
+    proxies: ['默认代理', ...groupNamesOfSelect],
+    'default-selected': '默认代理',
+  });
+
+  const directGroup = {
+    ...selectBaseOption,
+    name: '直连',
+    proxies: [...directProxies.map((p) => p.name)],
+    hidden: hideManualSelectGroupEnabled,
+  };
+
+  const globalGroup = {
+    ...selectBaseOption,
+    name: 'GLOBAL',
+    proxies: [
+      ...functionalGroups.map((g) => g.name),
+      ...customGroupNames,
+      ...(chainGroup ? [chainGroup.name] : []),
+      ...generatedRegionGroups.map((g) => g.name),
+    ],
+  };
+
+  return { globalGroup, functionalGroups, functionalRules, finalRuleProviders, chainGroup, directGroup };
+}
+
+// ---dns和hosts相关处理---
+
+// 常见的公共 DNS，用于过滤订阅中的公共 DNS
+// @shared:begin commonDnsList — 由 Script/shared/commonDnsList.js 同步，请勿在此直接修改
+const commonDnsList = [
+  // IPv4（国内）
+  '223.5.5.5',
+  '223.6.6.6',
+  '119.29.29.29',
+  '1.12.12.12',
+  '120.53.53.53',
+  '114.114.114.114',
+  '180.76.76.76',
+  '1.2.4.8',
+  '116.116.116.116',
+  '101.226.4.6',
+  '123.125.81.6',
+  '180.184.1.1',
+  '180.184.2.2',
+
+  // IPv6（国内）
+  '2400:3200::1',
+  '2400:3200:baba::1',
+  '2402:4e00::',
+  '2400:da00::6666',
+
+  // IPv4（国外）
+  '1.1.1.1',
+  '1.0.0.1',
+  '8.8.8.8',
+  '8.8.4.4',
+  '9.9.9.9',
+  '149.112.112.112',
+  '208.67.222.222',
+  '208.67.220.220',
+  '94.140.14.14',
+  '94.140.15.15',
+  '76.76.2.0',
+  '76.76.10.0',
+  '185.228.168.9',
+  '185.228.169.9',
+  '77.88.8.8',
+  '77.88.8.1',
+  '156.154.70.1',
+  '156.154.71.1',
+
+  // IPv6（国外）
+  '2606:4700:4700::1111',
+  '2606:4700:4700::1001',
+  '2001:4860:4860::8888',
+  '2001:4860:4860::8844',
+  '2620:fe::fe',
+  '2620:fe::9',
+  '2620:119:35::35',
+  '2620:119:53::53',
+  '2a10:50c0::bad1:ff',
+  '2a10:50c0::bad2:ff',
+  '2a10:50c0::ad1:ff',
+  '2a10:50c0::ad2:ff',
+  '2a0d:2a00:1::2',
+  '2a0d:2a00:2::2',
+  '2a02:6b8::feed:0ff',
+  '2a02:6b8:0:1::feed:0ff',
+  '2610:a1:1018::1',
+  '2610:a1:1019::1',
+
+  // 关键词（国内）
+  'alidns',
+  'doh.pub',
+  'dot.pub',
+  'dns.pub',
+  'dnspod',
+  'dns.baidu',
+
+  // 关键词（国外）
+  'dns.google',
+  'dns.cloudflare',
+  'dns.apple',
+  'cloudflare-dns',
+  'quad9',
+  'opendns',
+  'nextdns',
+  'adguard',
+  'one.one.one.one',
+];
+// @shared:end commonDnsList
+
+// 预编译公共 DNS 正则
+// @shared:begin commonDnsRegex — 由 Script/shared/commonDnsRegex.js 同步，请勿在此直接修改
+const commonDnsRegex = new RegExp(
+  commonDnsList.map((dns) => dns.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+  'i',
+);
+// @shared:end commonDnsRegex
+
+// 国内外 DNS 定义
+const chinaDNS = ['https://223.5.5.5/dns-query#DIRECT', 'https://1.12.12.12/dns-query#DIRECT'];
+const foreignDNS = ['https://cloudflare-dns.com/dns-query#默认代理', 'https://dns.google/dns-query#默认代理'];
+const defaultDNS = ['tls://223.5.5.5#DIRECT', 'https://1.12.12.12/dns-query#DIRECT'];
+const proxyServerDNS = ['tls://223.5.5.5#DIRECT', 'https://doh.pub/dns-query#DIRECT'];
+
+// @shared:begin hostSpecificity — 由 Script/shared/hostSpecificity.js 同步，请勿在此直接修改
+/**
+ * hosts 匹配优先级：精确 > +. > . > *（同级按出现顺序）
+ */
+function hostSpecificity(pattern) {
+  if (pattern.startsWith('+.')) return 2;
+  if (pattern.startsWith('.')) return 1;
+  if (pattern.includes('*')) return 0;
+  return 3;
+}
+// @shared:end hostSpecificity
+
+// @shared:begin matchDomainPattern — 由 Script/shared/matchDomainPattern.js 同步，请勿在此直接修改
+/**
+ * 判断域名规则（精确/通配）是否匹配节点域名集合，忽略大小写
+ */
+function matchDomainPattern(pattern, domains) {
+  pattern = pattern.toLowerCase();
+
+  // 精确匹配
+  if (!pattern.includes('*') && !pattern.startsWith('+.') && !pattern.startsWith('.')) {
+    return typeof domains === 'string'
+      ? domains.toLowerCase() === pattern
+      : [...domains].some((d) => d.toLowerCase() === pattern);
+  }
+
+  const domainList = typeof domains === 'string' ? [domains.toLowerCase()] : [...domains].map((d) => d.toLowerCase());
+
+  // +.example.com
+  if (pattern.startsWith('+.')) {
+    const suffix = pattern.slice(2);
+    return domainList.some((domain) => domain === suffix || domain.endsWith(`.${suffix}`));
+  }
+
+  // .example.com
+  if (pattern.startsWith('.')) {
+    const suffix = pattern.slice(1);
+    return domainList.some((domain) => domain !== suffix && domain.endsWith(`.${suffix}`));
+  }
+
+  // *.example.com、example.*.com 等
+  const patternParts = pattern.split('.');
+  return domainList.some((domain) => {
+    const domainParts = domain.split('.');
+    return (
+      patternParts.length === domainParts.length &&
+      patternParts.every((part, index) => part === '*' || part === domainParts[index])
+    );
+  });
+}
+// @shared:end matchDomainPattern
+
+// @shared:begin applyHostsToProxies — 由 Script/shared/applyHostsToProxies.js 同步，请勿在此直接修改
+/**
+ * 根据订阅 hosts 映射改写节点 server，改写后无需再复制 hosts 进新配置。
+ * 支持链式映射（如 a: b、b: c 时节点 a 改写为 c）；
+ * 回环映射（a: b、b: a）由内核校验拒绝，此处仅以已访问集合防御性终止
+ */
+function applyHostsToProxies(proxies, hosts) {
+  if (!hosts || typeof hosts !== 'object') return proxies;
+
+  const hostEntries = Object.entries(hosts)
+    .filter(
+      ([, value]) => (typeof value === 'string' && value.length > 0) || (Array.isArray(value) && value.length > 0),
+    )
+    .sort((a, b) => hostSpecificity(b[0]) - hostSpecificity(a[0]));
+
+  if (hostEntries.length === 0) return proxies;
+
+  const targetOf = (value) => {
+    if (Array.isArray(value)) value = value.find((v) => typeof v === 'string' && v.length > 0);
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  };
+
+  const resolveCache = new Map();
+  const resolve = (server) => {
+    const cached = resolveCache.get(server);
+    if (cached !== undefined) return cached;
+
+    const seen = new Set();
+    let current = server.toLowerCase();
+    let result = server;
+    while (!seen.has(current)) {
+      seen.add(current);
+      const entry = hostEntries.find(([pattern]) => matchDomainPattern(pattern, current));
+      const target = entry && targetOf(entry[1]);
+      if (!target) break;
+      result = target;
+      current = target.toLowerCase();
+    }
+    resolveCache.set(server, result);
+    return result;
+  };
+
+  return proxies.map((proxy) => {
+    if (typeof proxy.server !== 'string') return proxy;
+    const server = resolve(proxy.server);
+    return server === proxy.server ? proxy : { ...proxy, server };
+  });
+}
+// @shared:end applyHostsToProxies
+
+// @shared:begin stripDnsSuffix — 由 Script/shared/stripDnsSuffix.js 同步，请勿在此直接修改
+/**
+ * 剥离 DNS 地址的 # 策略组后缀；
+ * 参数包含 direct 或 直连 时，强制改为 #DIRECT
+ */
+function stripDnsSuffix(dns) {
+  const str = String(dns);
+  const hashIndex = str.indexOf('#');
+  if (hashIndex === -1) return str;
+
+  const prefix = str.slice(0, hashIndex).trim();
+
+  const suffix = str
+    .slice(hashIndex + 1)
+    .toLowerCase()
+    .trim();
+
+  if (suffix.includes('direct') || suffix.includes('直连')) return prefix + '#DIRECT';
+
+  return prefix;
+}
+// @shared:end stripDnsSuffix
+
+// @shared:begin isIpAddress — 由 Script/shared/isIpAddress.js 同步，请勿在此直接修改
+/**
+ * 判断节点 server 是否为 IP 地址（IPv4 / IPv6），用于从节点域名集合中排除 IP 类型的 server
+ */
+function isIpAddress(server) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(server) || server.includes(':');
+}
+// @shared:end isIpAddress
+
+// @shared:begin simplifyDomainPolicy — 由 Script/shared/simplifyDomainPolicy.js 同步，请勿在此直接修改
+/**
+ * 简化节点域名策略：将相同 DNS 的节点域名按后缀归类，至少三段的域名可合并为 +. 后缀形式
+ */
+function simplifyDomainPolicy(policy) {
+  const groups = new Map();
+
+  for (const [domain, dns] of Object.entries(policy)) {
+    const dnsKey = JSON.stringify(Array.isArray(dns) ? [...dns].sort() : dns);
+
+    if (domain.startsWith('+.') || domain.startsWith('.') || domain.includes('*')) {
+      groups.set(`keep:${domain}`, [{ domain, dns, dnsKey }]);
+      continue;
+    }
+
+    const parts = domain.split('.');
+
+    if (parts.length < 3) {
+      groups.set(`keep:${domain}`, [{ domain, dns, dnsKey }]);
+      continue;
+    }
+
+    const suffix = parts.slice(-2).join('.');
+
+    if (!groups.has(suffix)) {
+      groups.set(suffix, []);
+    }
+
+    groups.get(suffix).push({ domain, dns, dnsKey });
+  }
+
+  const result = {};
+
+  for (const [suffix, domains] of groups) {
+    const firstDnsKey = domains[0].dnsKey;
+    const sameDns = domains.every(({ dnsKey }) => dnsKey === firstDnsKey);
+
+    if (domains.length >= 2 && sameDns) {
+      result[`+.${suffix}`] = domains[0].dns;
+    } else {
+      for (const { domain, dns } of domains) {
+        result[domain] = dns;
+      }
+    }
+  }
+
+  return result;
+}
+// @shared:end simplifyDomainPolicy
+
+/**
+ * 构建 DNS 与 hosts：保留私有 DNS、节点域名 policy/fake-ip-filter，并按 hosts 改写节点 server
+ * hosts改写条件（满足任意一个条件即可）：
+ * 1. proxy-server-nameserver 有且仅有一个 DNS 并且该 DNS 包含非空的 listen 值
+ * 2. proxy-server-nameserver 有且仅有一个 DNS 并且该 DNS 包含 127.0.0.1 并且 listen 包含 0.0.0.0
+ */
+function buildDnsAndHostsConfig(config, filteredProxies) {
+  const minimalModeEnabled = activeRuleOptions.极简模式;
+
+  const originalDnsConfig = config.dns || {};
+
+  const proxyServerNameservers = originalDnsConfig['proxy-server-nameserver'] || [];
+  const listenValue = originalDnsConfig['listen'];
+
+  const shouldRewriteByHosts =
+    proxyServerNameservers.length === 1 &&
+    typeof listenValue === 'string' &&
+    listenValue.length > 0 &&
+    (proxyServerNameservers.some((dns) => String(dns).toLowerCase().includes(listenValue.toLowerCase())) ||
+      (listenValue.includes('0.0.0.0') &&
+        proxyServerNameservers.some((dns) => String(dns).toLowerCase().includes('127.0.0.1'))));
+
+  const mappedProxies = shouldRewriteByHosts ? applyHostsToProxies(filteredProxies, config.hosts) : filteredProxies;
+
+  const proxyDomains = new Set(
+    mappedProxies
+      .filter((proxy) => typeof proxy.server === 'string')
+      .map((proxy) => proxy.server.toLowerCase())
+      .filter((server) => !isIpAddress(server)),
+  );
+
+  const privateProxyServerNameservers = shouldRewriteByHosts ? [] : proxyServerNameservers;
+
+  const isCommonDns = (dns) => {
+    const value = String(dns).trim().toLowerCase();
+    if (value === 'system' || value === 'system://') return true;
+
+    return commonDnsRegex.test(value);
+  };
+
+  const privateDNS = [
+    ...new Set(
+      [...(originalDnsConfig['nameserver'] || []), ...privateProxyServerNameservers]
+        .map(stripDnsSuffix)
+        .filter((dns) => dns.length > 0 && !isCommonDns(dns)),
+    ),
+  ];
+
+  const matchedProxyPolicy = {};
+  for (const [domain, dns] of Object.entries({
+    ...originalDnsConfig['nameserver-policy'],
+    ...originalDnsConfig['proxy-server-nameserver-policy'],
+  })) {
+    if (!matchDomainPattern(domain, proxyDomains)) continue;
+
+    const stripedDns = Array.isArray(dns) ? dns.map(stripDnsSuffix).filter((d) => d.length > 0) : stripDnsSuffix(dns);
+    if (Array.isArray(stripedDns) && stripedDns.length === 0) continue;
+
+    matchedProxyPolicy[domain] = stripedDns;
+  }
+
+  if (privateDNS.length > 0 && Object.keys(matchedProxyPolicy).length === 0) {
+    for (const domain of proxyDomains) {
+      matchedProxyPolicy[domain] = privateDNS;
+    }
+  }
+
+  const matchedPolicyDomains = Object.keys(matchedProxyPolicy);
+  const proxyServerPolicy =
+    proxyDomains.size === matchedPolicyDomains.length &&
+    matchedPolicyDomains.every((domain) => proxyDomains.has(domain.toLowerCase()))
+      ? simplifyDomainPolicy(matchedProxyPolicy)
+      : matchedProxyPolicy;
+
+  const originalFakeIpFilter = originalDnsConfig['fake-ip-filter'] || [];
+  const proxyFakeIpFilter = originalFakeIpFilter.filter((pattern) => {
+    const p = String(pattern);
+    return matchDomainPattern(p, proxyDomains);
+  });
+
+  const dns = {
+    enable: true,
+    ipv6: true,
+    'use-hosts': true,
+    'cache-algorithm': 'arc',
+    'prefer-h3': false,
+    'use-system-hosts': true,
+    'enhanced-mode': 'fake-ip',
+    'fake-ip-range': '198.18.0.1/15',
+    'fake-ip-range6': '2001:2::1/48',
+    'fake-ip-filter': [
+      'rule-set:private',
+      'rule-set:fakeip_filter',
+      'rule-set:geolocation-cn',
+      ...(minimalModeEnabled ? [] : activeRuleOptions['FCM'] ? ['rule-set:googlefcm'] : []),
+      ...proxyFakeIpFilter,
+    ],
+    'default-nameserver': defaultDNS,
+    'proxy-server-nameserver': proxyServerDNS,
+    ...(Object.keys(proxyServerPolicy).length > 0 && {
+      'proxy-server-nameserver-policy': proxyServerPolicy,
+    }),
+    nameserver: foreignDNS,
+    'nameserver-policy': {
+      'rule-set:cn': chinaDNS,
+    },
+    'direct-nameserver': chinaDNS,
+    // 官方默认：黑名单 fake-ip；DNS 服务器自身不跟 rules，避免规则集没下完时解析环路。
+    'fake-ip-filter-mode': 'blacklist',
+    'respect-rules': false,
+  };
+
+  const hosts = {
+    'doh.pub': ['1.12.12.12', '120.53.53.53'],
+    'cloudflare-dns.com': ['1.1.1.1', '1.0.0.1'],
+    'dns.google': ['8.8.8.8', '8.8.4.4'],
+
+    // 解决谷歌商店无法下载的问题
+    'services.googleapis.cn': 'services.googleapis.com',
+
+    // 屏蔽哔哩哔哩PCDN，解决访问视频/直播卡顿问题
+    '+.mcdn.bilivideo.com': ['0.0.0.0'],
+    '+.mcdn.bilivideo.cn': ['0.0.0.0'],
+    '+.edge.mountaintoys.cn': ['0.0.0.0'],
+    '+.h2.smtcdns.net': ['0.0.0.0'],
+  };
+
+  return { dns, hosts, proxies: mappedProxies };
+}
+
+// --- 安全基线（对齐 Mihomo v1.19.32） ---
+const securityBaseline = {
+  'mixed-port': 7890,
+  'allow-lan': false,
+  'bind-address': '127.0.0.1',
+  ipv6: true,
+  mode: 'rule',
+  'log-level': 'info',
+  'unified-delay': true,
+  'tcp-concurrent': true,
+  'keep-alive-interval': 15,
+  'keep-alive-idle': 15,
+  'disable-keep-alive': false,
+  'find-process-mode': 'strict',
+  'etag-support': true,
+  'external-controller': '127.0.0.1:9090',
+  'external-ui': 'ui',
+  'external-ui-url': 'https://github.com/Zephyruso/zashboard/releases/download/v3.29.1/dist.zip',
+  'geodata-mode': false,
+  'geodata-loader': 'memconservative',
+  'geosite-matcher': 'succinct',
+  'geo-auto-update': true,
+  'geo-update-interval': 168,
+  'geox-url': {
+    geoip: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat',
+    geosite: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat',
+    mmdb: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb',
+    asn: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb',
+  },
+  profile: {
+    'store-selected': true,
+    'store-fake-ip': true,
+  },
+  ntp: {
+    enable: false,
+    'write-to-system': false,
+    server: 'ntp.aliyun.com',
+    port: 123,
+    interval: 30,
+  },
+  experimental: {
+    'quic-go-disable-gso': false,
+    'quic-go-disable-ecn': false,
+  },
+  'external-controller-cors': {
+    'allow-origins': [
+      'http://127.0.0.1:9090',
+      'https://127.0.0.1:9090',
+      'http://localhost:9090',
+      'https://localhost:9090',
+    ],
+    'allow-private-network': false,
+  },
+};
+
+const securitySniffer = {
+  enable: true,
+  'force-dns-mapping': true,
+  'parse-pure-ip': true,
+  // 仅用于域名识别，不把嗅探结果强制替换为实际目标；避免 fake-ip + override-destination 形成重解析/路由循环。
+  'override-destination': false,
+  sniff: {
+    // ports 在 v1.19.32 是 []string；HTTP 可单独覆盖全局 override-destination。没有 enable 字段。
+    HTTP: { ports: ['80', '8080-8880'], 'override-destination': true },
+    TLS: { ports: ['443', '8443'] },
+    QUIC: { ports: ['443', '8443'] },
+  },
+  'force-domain': [
+    '+.google.com',
+    '+.youtube.com',
+    '+.telegram.org',
+    '+.openai.com',
+    '+.anthropic.com',
+    '+.claude.ai',
+    '+.claude.com',
+    '+.claude.dev',
+    '+.claudeusercontent.com',
+    '+.twitter.com',
+    '+.x.com',
+    '+.googlevideo.com',
+    '+.ytimg.com',
+    '+.chatgpt.com',
+  ],
+  'skip-dst-address': [
+    '91.105.192.0/23',
+    '91.108.4.0/22',
+    '91.108.8.0/21',
+    '91.108.16.0/21',
+    '91.108.56.0/22',
+    '95.161.64.0/20',
+    '149.154.160.0/20',
+    '185.76.151.0/24',
+    '2001:b28:f23d::/48',
+    '2001:b28:f23f::/48',
+    '2001:67c:4e8::/48',
+  ],
+  'skip-domain': [
+    'geosite:cn',
+    'geosite:geolocation-cn',
+    'geosite:category-ads-all',
+    'geosite:category-games-cn',
+    '+.gstatic.com',
+    '+.msftconnecttest.com',
+    '+.msftncsi.com',
+    '+.captive.apple.com',
+    '+.router.asus.com',
+    '+.tplogin.cn',
+    '+.hiwifi.com',
+    '+.phicomm.me',
+    '+.local',
+    '+.lan',
+    '+.home.arpa',
+    '+.unionpay.com',
+    '+.95516.com',
+    '+.alipay.com',
+    '+.alipayobjects.com',
+    '+.tenpay.com',
+    '+.wechatpay.cn',
+    '+.abchina.com',
+    '+.abchina.com.cn',
+    '+.icbc.com.cn',
+    '+.ccb.com',
+    '+.boc.cn',
+    '+.bankofchina.com',
+    '+.cmbchina.com',
+    '+.bankcomm.com',
+    '+.psbc.com',
+    '+.spdb.com.cn',
+    '+.cib.com.cn',
+    '+.cmbc.com.cn',
+    '+.pingan.com',
+    '+.cgbchina.com.cn',
+    '+.hxb.com.cn',
+    '+.cebbank.com',
+    '+.citicbank.com',
+    '+.ecitic.com',
+    '+.gfbazc.com',
+    '+.fzuol.com',
+    '+.netsunion.org.cn',
+    '+.tongdun.net',
+    '+.ishumei.com',
+    '+.geetest.com',
+    '+.trustdevice.net',
+    '+.rongcloud.cn',
+    '+.rongcloud.com',
+    '+.umeng.com',
+    '+.umengcloud.com',
+    '+.tongduncdn.com',
+    '+.dingxiangyun.com',
+    '+.dingxiangyun.cn',
+    '+.rong360.com',
+    '+.99bill.com',
+    '+.chinapay.com',
+    '+.yeepay.com',
+    '+.jdpay.com',
+    '+.unionpaysecure.com',
+    '+.pingan.com.cn',
+    '+.aegis.qq.com',
+    '+.riskradar.net',
+    '+.cpic.com.cn',
+    '+.zhongan.com',
+    '+.eastmoney.com',
+    '+.htsc.com.cn',
+    '+.gtja.com',
+    '+.jpush.cn',
+    '+.jpush.io',
+    '+.jiguang.cn',
+    '+.weixin.qq.com',
+    '+.wx.qq.com',
+    '+.servicewechat.com',
+    '+.12306.cn',
+    '+.railway12306.cn',
+    '+.chinatax.gov.cn',
+    '+.fuwu.nhsa.gov.cn',
+    '+.gjzwfw.gov.cn',
+    '+.xiaojukeji.com',
+    '+.didichuxing.com',
+    '+.work.weixin.qq.com',
+    '+.meeting.tencent.com',
+    '+.taobao.com',
+    '+.jd.com',
+    '+.pinduoduo.com',
+    '+.meituan.com',
+    '+.dianping.com',
+    '+.ele.me',
+    '+.amap.com',
+    '+.baidu.com',
+    '+.xiaohongshu.com',
+    '+.kuaishou.com',
+    '+.163.com',
+    '+.weibo.com',
+    '+.zhihu.com',
+    '+.ctrip.com',
+    '+.qunar.com',
+    '+.sf-express.com',
+    '+.dingtalk.com',
+    '+.feishu.cn',
+    '+.xuexi.cn',
+    '+.chsi.com.cn',
+  ],
+};
+
+const securityHosts = {
+  'dns.alidns.com': ['223.5.5.5', '223.6.6.6', '2400:3200::1', '2400:3200:baba::1'],
+  'doh.pub': ['1.12.12.12', '120.53.53.53', '2402:4e00::', '2402:4e00:1::'],
+  'dns.google': ['8.8.8.8', '8.8.4.4', '2001:4860:4860::8888', '2001:4860:4860::8844'],
+  'cloudflare-dns.com': ['1.1.1.1', '1.0.0.1', '2606:4700:4700::1111', '2606:4700:4700::1001'],
+};
+
+// --- proxy-providers 兼容：保留节点信息，脚本接管其余配置 ---
+
+// @shared:begin hasProxyProviders — 由 Script/shared/hasProxyProviders.js 同步，请勿在此直接修改
+/**
+ * 判断输入是否包含 proxy-providers。
+ * provider 模式下不尝试在脚本运行期展开远端订阅，而是直接让 Mihomo
+ * 通过 provider 的 use/filter 机制使用节点；这样不会修改或丢失原节点信息。
+ */
+function hasProxyProviders(config) {
+  return !!(
+    config &&
+    config['proxy-providers'] &&
+    typeof config['proxy-providers'] === 'object' &&
+    !Array.isArray(config['proxy-providers']) &&
+    Object.keys(config['proxy-providers']).length > 0
+  );
+}
+// @shared:end hasProxyProviders
+
+// @shared:begin getProviderRegionFilter — 由 Script/shared/getProviderRegionFilter.js 同步，请勿在此直接修改
+/**
+ * provider 模式的地区组。
+ * Mihomo 会在运行期从 proxy-providers 中加载节点，因此这里使用 use + filter，
+ * 不需要脚本读取/下载机场订阅内容。
+ */
+function getProviderRegionFilter(region) {
+  // Mihomo 使用 Go/RE2 正则，不支持 JS 的 lookbehind。
+  // 地区识别沿用原 regionDefinitions；倍率识别使用语义等价的 RE2 兼容表达式。
+  if (region.name === lowRateRegionName) {
+    return '(?i)(?:^|[^0-9])0\\.[0-5](?:倍|[x×*])?(?:$|[^0-9])|(?:^|[^A-Za-z])(?:下载|低倍|免费|free)(?:$|[^A-Za-z])';
+  }
+
+  if (region.name === highRateRegionName) {
+    return '(?i)(?:^|[^0-9])(?:[2-9]\\d*|1\\d+)(?:\\.\\d+)?(?:倍|[x×*])|(?:^|[^0-9])[*×x]\\s*(?:[2-9]\\d*|1\\d+)(?:\\.\\d+)?';
+  }
+
+  return '(?i)' + expandTraditional(region.regex.source);
+}
+// @shared:end getProviderRegionFilter
+
+// @shared:begin getProviderExcludeFilter — 由 Script/shared/getProviderExcludeFilter.js 同步，请勿在此直接修改
+/**
+ * provider 模式下 exclude-filter 的取值。节点名只有内核运行时才可见，脚本无法逐个判断，
+ * 因此把普通模式的规则「强信息词一律排除；弱词只在节点没有地区特征时才排除」翻译成正则。
+ * Mihomo 使用 regexp2（支持否定前瞻），所以两种范围都能精确还原：
+ *  - 'region'：地区组。节点已被地区正则选中，只需排除强信息词
+ *    （「日本 支持 Netflix」保留，「剩余流量 120 GB」排除）；
+ *  - 'all'：收纳全部节点的基础组 / 链式组。排除 = 强信息词，或「不含任何地区特征且含弱词」
+ *    （「香港 备用 01」保留，「备用域名」「使用说明」排除）。
+ * 关闭「过滤非地区节点」时返回空串（不下发 exclude-filter），与普通模式不做过滤一致。
+ */
+function getProviderExcludeFilter(scope) {
+  if (!activeRuleOptions.过滤非地区节点) return '';
+  const strong = strongExcludeFilter.source;
+  if (scope === 'region') return '(?i)' + strong;
+  const anyRegion = allRegionDefinitions
+    .map((region) => getProviderRegionFilter(region).replace(/^\(\?i\)/, ''))
+    .join('|');
+  return '(?i)' + strong + '|^(?!.*(?:' + anyRegion + ')).*(?:' + excludeFilter.source + ')';
+}
+// @shared:end getProviderExcludeFilter
+
+// @shared:begin buildProviderRegionGroups — 由 Script/shared/buildProviderRegionGroups.js 同步，请勿在此直接修改
+function buildProviderRegionGroups(filteredProxies, customProxies, providerNames) {
+  // Provider 本身的远程节点在脚本执行阶段不可见，因此严格沿用原有
+  // getMatchedRegions() + buildRegionGroups() 逻辑：只有当前脚本实际可见的
+  // 节点能够证明某地区存在时，才创建该地区组；绝不为未知/空地区预建空组。
+  const groups = buildRegionGroups(filteredProxies, customProxies);
+  const regionByName = new Map(allRegionDefinitions.map((region) => [region.name, region]));
+
+  for (const group of groups) {
+    const regionName = group.name.endsWith('-自动选择') ? group.name.slice(0, -5) : group.name;
+    const region = regionByName.get(regionName);
+    if (!region) continue;
+
+    group.use = [...providerNames];
+    group.filter = getProviderRegionFilter(region);
+    const exclude = getProviderExcludeFilter('region');
+    if (exclude) group['exclude-filter'] = exclude;
+    group['exclude-type'] = 'DIRECT|REJECT|REJECT-DROP|PASS';
+  }
+
+  return groups;
+}
+// @shared:end buildProviderRegionGroups
+
+// @shared:begin enableProviderSources — 由 Script/shared/enableProviderSources.js 同步，请勿在此直接修改
+/**
+ * provider 模式下让原有基础组直接消费 provider 节点。
+ * 仅补充节点来源，不删除原有规则、组结构或功能。
+ */
+function enableProviderSources(groups, chainGroup, providerNames) {
+  const baseNames = new Set(baseGroups.map((group) => group.name));
+  for (const group of groups) {
+    if (!group || (!baseNames.has(group.name) && group.name !== '默认代理')) continue;
+    group.use = [...providerNames];
+    const exclude = getProviderExcludeFilter('all');
+    if (exclude) group['exclude-filter'] = exclude;
+    group['exclude-type'] = 'DIRECT|REJECT|REJECT-DROP|PASS';
+  }
+
+  if (chainGroup) {
+    chainGroup.use = [...providerNames];
+    const chainExclude = getProviderExcludeFilter('all');
+    if (chainExclude) chainGroup['exclude-filter'] = chainExclude;
+    chainGroup['exclude-type'] = 'DIRECT|REJECT|REJECT-DROP|PASS';
+  }
+}
+// @shared:end enableProviderSources
+
+// --- 主入口 ---
+
+// 客户端（Clash Verge Rev / Mihomo Party / FlClash 等）会注入自己的端口与控制器地址。
+// 仅当端口合法、控制器为回环地址时才保留；非回环地址一律回落到安全基线，不放宽安全边界。
+// @shared:begin isValidPort — 由 Script/shared/isValidPort.js 同步，请勿在此直接修改
+function isValidPort(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+// @shared:end isValidPort
+
+// @shared:begin isLoopbackController — 由 Script/shared/isLoopbackController.js 同步，请勿在此直接修改
+function isLoopbackController(value) {
+  if (typeof value !== 'string') return false;
+  const match = /^(127\.0\.0\.1|localhost|\[::1\]):(\d{1,5})$/i.exec(value.trim());
+  return Boolean(match) && isValidPort(Number(match[2]));
+}
+// @shared:end isLoopbackController
+
+/**
+ * 主入口：覆写机场订阅配置，生成完整 mihomo 配置
+ */
+function main(config, context) {
+  activeRuleOptions = resolveRuleOptions(context);
+  activeChainLanding = Boolean(context && context.customLanding);
+  const providerMode = hasProxyProviders(config);
+  const providerNames = providerMode ? Object.keys(config['proxy-providers']) : [];
+  const newConfig = {};
+
+  // 普通订阅沿用原有节点标准化流程；provider 配置不下载、不展开、不改名。
+  // 仅补 v1.19.32 必填的 vmess.cipher，否则内核会拒绝整份配置。
+  const originalProxies = Array.isArray(config.proxies) ? config.proxies : [];
+  const filteredProxies = providerMode ? filterProviderVisibleProxies(config) : filterAndNormalizeProxies(config);
+
+  const { customProxies, customProxyNames, customGroup } = buildCustomizeGroups(filteredProxies);
+
+  const generatedRegionGroups = activeRuleOptions.极简模式
+    ? []
+    : providerMode
+      ? buildProviderRegionGroups(filteredProxies, customProxies, providerNames)
+      : buildRegionGroups(filteredProxies, customProxies);
+
+  const { globalGroup, functionalGroups, functionalRules, finalRuleProviders, chainGroup, directGroup } =
+    buildFunctionalGroups(filteredProxies, generatedRegionGroups, { customProxyNames, customGroup });
+
+  if (providerMode) {
+    enableProviderSources(functionalGroups, chainGroup, providerNames);
+  }
+
+  const {
+    dns,
+    hosts,
+    proxies: mappedProxies,
+  } = buildDnsAndHostsConfig(config, providerMode ? originalProxies : filteredProxies);
+
+  newConfig['dns'] = dns;
+  newConfig['hosts'] = { ...securityHosts, ...hosts };
+  Object.assign(newConfig, securityBaseline);
+  // 保留客户端注入的控制器密钥：覆写从空对象重建配置，若不显式透传，secret 会被静默丢弃，
+  // 外部控制器随之变成无鉴权。
+  if (typeof config.secret === 'string' && config.secret.length > 0) newConfig['secret'] = config.secret;
+  if (isValidPort(config['mixed-port'])) newConfig['mixed-port'] = config['mixed-port'];
+  if (isLoopbackController(config['external-controller'])) {
+    newConfig['external-controller'] = config['external-controller'].trim();
+  }
+  newConfig['sniffer'] = securitySniffer;
+
+  const tunConfig = {
+    enable: true,
+    // v1.19.32 默认栈是 mips；congestion-controller 只在 mips 上生效。
+    stack: 'mips',
+    'congestion-controller': 'bbr',
+    'auto-route': true,
+    'strict-route': true,
+    'auto-redirect': true,
+    'auto-detect-interface': true,
+    // v1.19.32：dns-hijack 的 tcp:// 前缀会被丢掉，any 会改写成 0.0.0.0。
+    // 未指定地址 + 53 会同时劫持 TCP 与 UDP，一条即可，与官方示例一致。
+    'dns-hijack': ['0.0.0.0:53'],
+    'udp-timeout': 300,
+    // 排除本机，避免 127.0.0.1:18080 这类订阅转换器被 TUN 收走后规则集更新 EOF。
+    'route-exclude-address': ['127.0.0.0/8', '::1/128'],
+  };
+  if (activeRuleOptions.强制TUN) {
+    newConfig['tun'] = tunConfig;
+  } else if (config.tun && typeof config.tun === 'object' && !Array.isArray(config.tun)) {
+    // 关闭「强制TUN」时不接管 TUN：原样保留订阅/客户端自带的设置；没有则不输出 tun，由内核默认（关闭）。
+    newConfig['tun'] = config.tun;
+  }
+
+  // 节点信息是唯一不由脚本覆盖的部分：
+  // - 原始 proxies 原样保留；
+  // - 原始 proxy-providers 原样保留；
+  // 脚本只接管其余配置结构。
+  newConfig['proxies'] = [
+    ...(providerMode ? originalProxies.map(applyKernelProxyDefaults) : mappedProxies),
+    ...customProxies,
+    ...directProxies,
+  ];
+  if (providerMode) {
+    newConfig['proxy-providers'] = config['proxy-providers'];
+  }
+  newConfig['proxy-groups'] = [
+    globalGroup,
+    ...functionalGroups,
+    ...(customGroup ? [customGroup] : []),
+    ...(chainGroup ? [chainGroup] : []),
+    directGroup,
+    ...generatedRegionGroups,
+  ];
+  newConfig['rule-providers'] = finalRuleProviders;
+
+  newConfig['rules'] = [
+    ...prefixRules,
+    ...(activeRuleOptions.屏蔽WebRTC ? blockWebRtcStun : []),
+    ...(activeRuleOptions.屏蔽国外QUIC ? blockForeignQuic : []),
+    ...functionalRules,
+
+    // 兜底规则
+    'RULE-SET,geolocation-!cn,默认代理',
+    'RULE-SET,cn_ip,直连',
+    'RULE-SET,private_ip,直连',
+    `MATCH,${activeRuleOptions.极简模式 ? '默认代理' : '漏网之鱼'}`,
+  ];
+
+  return newConfig;
+}
