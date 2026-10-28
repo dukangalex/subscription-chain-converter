@@ -24,18 +24,40 @@ JSON/YAML) against the Python builders' outputs for the same inputs.
 Endpoints are identical to the VPS version: `GET /`, `/chain`,
 `/conv`, `/sub`, `/version`, `POST /shorten`, `GET /c|m|s/<code>`,
 `GET /rules/<path>` — plus `POST /admin/refresh`, which requires
-`Authorization: Bearer <REFRESH_TOKEN>` (a Worker secret).
+`Authorization: Bearer <REFRESH_TOKEN>` (a Worker secret), and
+`GET /api/link/<code>`, which returns the stored short-link record
+as JSON so the page can restore a previous form (the code is the
+bearer credential for its record, same trust model as the link).
+
+## Using the page
+
+Open the Worker root in a browser — no setup beyond deploying:
+
+- **Paste and go.** Two tabs (plain conversion / chain proxy) take
+  node URIs and subscription URLs mixed line by line; the result
+  area shows the short link in all three letter forms (`/c/`,
+  `/m/`, `/s/`) with per-link copy buttons.
+- **One-click client import.** For Clash and sing-box targets the
+  matching link row carries an import button (`clash://` /
+  `sing-box://` deep link) that hands the subscription straight to
+  the client app.
+- **Restore a previous generation.** Every short link's inputs are
+  kept in KV; paste a code (or a full link) into the restore box
+  and the form refills exactly as it was, ready to tweak and
+  regenerate — no need to keep the original text around.
+- If the short-link service is unavailable, the page falls back to
+  a long `/conv`, `/sub` or `/chain` URL instead of failing.
 
 ## Free-tier feasibility
 
 KV free tier: 1 GB storage, 100k reads/day, 1k writes/day. One full
-rule refresh writes ~104 keys (103 files + status), so the daily
-cron uses about a tenth of the daily write budget. The largest
+rule refresh writes ~77 keys (76 files + status), so the daily
+cron uses well under a tenth of the daily write budget. The largest
 single value, `clash/geoip.dat` at about 16.5 MB, fits under the
 25 MB KV value limit, and the whole mirror is well under 1 GB.
 
 One caveat: the Workers **free plan allows 50 subrequests per
-invocation**, while a full refresh fetches 103 files. On the free
+invocation**, while a full refresh fetches 76 files. On the free
 plan a single refresh run therefore fills the mirror incrementally —
 entries that fail keep their previous copy and later runs (cron or
 manual) top them up. For a guaranteed one-shot refresh, the Workers
@@ -122,6 +144,6 @@ deploy.sh             one-click deploy + smoke test
 src/worker.js         the Worker (page, ingestion, builders, KV, HTTP)
 src/skeleton_clash.json    bundled verbatim from the VPS backend
 src/skeleton_singbox.json  bundled verbatim
-src/rules_manifest.json    bundled verbatim (103 official sources)
+src/rules_manifest.json    bundled verbatim (76 official sources)
 test/smoke.mjs        stubbed-KV/fetch test harness: node test/smoke.mjs
 ```
