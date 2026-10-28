@@ -189,6 +189,23 @@ let code = null;
     (g.headers.get("Content-Type") || "").includes("application/octet-stream"));
 }
 
+// (f) saved-config restore endpoint + page affordances
+{
+  const r = await call("/api/link/" + code);
+  const j = await r.json();
+  check("api/link returns the stored record",
+    r.status === 200 && j.kind === "chain" && j.target === "singbox" &&
+    j.entry === ENTRY && j.exit === EXIT,
+    `got ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
+  const miss = await call("/api/link/no-such-code");
+  check("api/link unknown code returns 404",
+    miss.status === 404, `got ${miss.status}`);
+  const page = await (await call("/")).text();
+  check("page wires restore + one-click import",
+    page.includes("/api/link/") && page.includes("install-config") &&
+    page.includes("import-remote-profile"));
+}
+
 console.log(failures === 0
   ? "SMOKE OK — all assertions passed"
   : `SMOKE FAILED — ${failures} assertion(s) failed`);
