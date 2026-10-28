@@ -17,6 +17,12 @@
 手册、验证手册与运维手册。文中所有域名、端口、路径均为示例值
 （`sub.example.com` 等），实施时替换为自己的即可。
 
+> **Implementations / 落地形态**：本仓库含 VPS 落地实现（`deploy/`）。
+> Cloudflare Workers 版为独立仓库
+> [subscription-chain-converter-cf](https://github.com/dukangalex/subscription-chain-converter-cf)：
+> 转换内核与本规格一致，部署与页面借鉴 sublink-worker 的形态
+> （仓库根即 Worker 工程、一键部署按钮、快速上手指引）。
+
 ## 1. 目标与设计原则
 
 1. **自托管、数据不出门**：转换在自己的服务器上完成，原始订阅地址（含
