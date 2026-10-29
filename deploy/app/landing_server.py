@@ -691,7 +691,7 @@ def _overlay_chain(enodes, xnodes):
         return None
     out.setdefault("outbounds", []).append({
         "type": "urltest", "tag": ENTRY_AUTO, "outbounds": entry_tags,
-        "url": TEST_URL, "interval": "3m", "tolerance": 100,
+        "url": TEST_URL, "interval": "1m", "tolerance": 20,
         "interrupt_exist_connections": False})
     for ib in out.get("inbounds") or []:
         for f in ("sniff", "sniff_override_destination", "sniff_timeout",
@@ -782,7 +782,7 @@ def _overlay_chain(enodes, xnodes):
 
     _exit_group = {"type": "urltest", "tag": EXIT_AUTO,
                    "outbounds": list(exit_tags), "url": TEST_URL,
-                   "interval": "3m", "tolerance": 100,
+                   "interval": "1m", "tolerance": 20,
                    "interrupt_exist_connections": False}
     for _t, _g in _live.items():
         if _t in _region:
@@ -1183,10 +1183,14 @@ def merge_singbox(entry_items, exit_items):
         if g.get("type") in GROUP_TYPES and g.get("tag") in ("🔰 节点选择", "GLOBAL"):
             rest = [m for m in g["outbounds"] if m != EXIT_AUTO]
             g["outbounds"] = [EXIT_AUTO] + rest
-    urltest = {"url": TEST_URL, "interval": "3m", "tolerance": 100}
+    # Chain failover tuning (2026-10-29): 1m interval / 20ms
+    # tolerance. The old 3m / 100ms left dead nodes selected for
+    # minutes — field report: selected exit showed Timeout while
+    # healthy exits sat unused next to it.
+    urltest = {"url": TEST_URL, "interval": "1m", "tolerance": 20}
     out.append({"type": "urltest", "tag": ENTRY_AUTO,
                 "outbounds": [emap[o["tag"]] for o in enodes],
-                **{**urltest, "interval": "3m"}})
+                **{**urltest, "interval": "1m"}})
     out.append({"type": "urltest", "tag": EXIT_AUTO,
                 "outbounds": [xmap[o["tag"]] for o in xnodes], **urltest})
     xcfg["outbounds"] = out
@@ -1317,7 +1321,7 @@ def _clashbase_chain(eprox, xprox):
         return None
     groups = out.setdefault("proxy-groups", [])
     groups.append({"name": ENTRY_AUTO, "type": "url-test",
-                    "url": TEST_URL, "interval": 180, "tolerance": 100,
+                    "url": TEST_URL, "interval": 60, "tolerance": 20, "lazy": False, "timeout": 3000, "max-failed-times": 3,
                     "proxies": entry_names})
     # BACKEND-ADAPTED (2026-10-25): the base DNS baseline bootstraps
     # node-hostname resolution over DoT (tls://223.5.5.5, TCP 853).
@@ -1389,8 +1393,11 @@ def _clashbase_chain(eprox, xprox):
             return _rule
         out["rules"] = [_retarget(r) for r in out.get("rules") or []]
     _groups.insert(0, {"name": EXIT_AUTO, "type": "url-test",
-                       "url": TEST_URL, "interval": 180,
-                       "tolerance": 100, "proxies": list(exit_names)})
+                       "url": TEST_URL, "interval": 60,
+                       "tolerance": 20,
+                       "lazy": False,
+                       "timeout": 3000,
+                       "max-failed-times": 3, "proxies": list(exit_names)})
     _entry_group = _by_name.get(ENTRY_AUTO)
     if _entry_group is not None and _entry_group in _groups:
         _groups.remove(_entry_group)
@@ -1514,11 +1521,18 @@ def merge_clash(entry_items, exit_items):
     if groups:
         rest = [m for m in groups[0]["proxies"] if m != EXIT_AUTO]
         groups[0]["proxies"] = [EXIT_AUTO] + rest
-    urltest = {"type": "url-test", "url": TEST_URL, "interval": 180,
-               "tolerance": 100}
+    # Chain failover tuning (2026-10-29): 60s interval, 20ms
+    # tolerance, lazy off (checks keep running in the background),
+    # 3s per-node timeout, forced recheck after 3 failures. The old
+    # 180s / 100ms / lazy-default setup switched far too late.
+    urltest = {"type": "url-test", "url": TEST_URL, "interval": 60,
+               "tolerance": 20,
+               "lazy": False,
+               "timeout": 3000,
+               "max-failed-times": 3}
     groups.append({"name": ENTRY_AUTO,
                    "proxies": [emap[p["name"]] for p in eprox],
-                   **{**urltest, "interval": 180}})
+                   **{**urltest, "interval": 60}})
     groups.append({"name": EXIT_AUTO,
                    "proxies": [xmap[p["name"]] for p in xprox], **urltest})
     # Leak prevention + direct-routing pack, prepended (first match wins):
