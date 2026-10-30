@@ -1861,7 +1861,7 @@ class H(BaseHTTPRequestHandler):
         if u.path in ("/", "/index.html"):
             return self._send(200, PAGE, "text/html; charset=utf-8")
         if u.path.startswith("/rules/"):
-            rel = u.path[len("/rules/"):]
+            rel = urllib.parse.unquote(u.path[len("/rules/"):])
             try:
                 allowed = _manifest_dsts()
             except Exception:
