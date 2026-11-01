@@ -1177,7 +1177,7 @@ def _mark_chain_groups_clash(cfg):
             ren[name] = new
             g["name"] = new
             existing.add(new)
-    chain_params = {"url": TEST_URL, "interval": 60, "tolerance": 100,
+    chain_params = {"url": TEST_URL, "interval": 30, "tolerance": 100,
                     "lazy": False, "timeout": 5000, "max-failed-times": 3}
     entries = {p.get("name") for p in cfg.get("proxies") or []
                if isinstance(p, dict) and not p.get("dialer-proxy")}
@@ -1260,7 +1260,7 @@ def _mark_chain_groups_singbox(cfg):
         if (o.get("type") == "urltest" and mem
                 and (all(m in exits for m in mem)
                      or all(m in entries for m in mem))):
-            o["interval"] = "1m"
+            o["interval"] = "30s"
             o["tolerance"] = 100
         if o.get("tag") == "\u9ed8\u8ba4\u4ee3\u7406" \
                 and EXIT_AUTO in (o.get("outbounds") or []):
