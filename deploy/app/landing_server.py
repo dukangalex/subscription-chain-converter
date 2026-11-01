@@ -1177,6 +1177,22 @@ def _mark_chain_groups_clash(cfg):
             ren[name] = new
             g["name"] = new
             existing.add(new)
+    chain_params = {"url": TEST_URL, "interval": 60, "tolerance": 100,
+                    "lazy": False, "timeout": 5000, "max-failed-times": 3}
+    entries = {p.get("name") for p in cfg.get("proxies") or []
+               if isinstance(p, dict) and not p.get("dialer-proxy")}
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        mem = [m for m in g.get("proxies") or [] if isinstance(m, str)]
+        if (g.get("type") in ("url-test", "fallback", "load-balance")
+                and mem and (all(m in exits for m in mem)
+                             or all(m in entries for m in mem))):
+            g.update(chain_params)
+        if g.get("name") == "\u9ed8\u8ba4\u4ee3\u7406" \
+                and EXIT_AUTO in (g.get("proxies") or []):
+            rest = [m for m in g["proxies"] if m != EXIT_AUTO]
+            g["proxies"] = [EXIT_AUTO] + rest
     if not ren:
         return cfg
     for g in groups:
@@ -1234,6 +1250,22 @@ def _mark_chain_groups_singbox(cfg):
             ren[tag] = new
             o["tag"] = new
             existing.add(new)
+    entries = {o.get("tag") for o in obs
+               if isinstance(o, dict) and not o.get("detour")
+               and "outbounds" not in o}
+    for o in obs:
+        if not isinstance(o, dict):
+            continue
+        mem = [m for m in o.get("outbounds") or [] if isinstance(m, str)]
+        if (o.get("type") == "urltest" and mem
+                and (all(m in exits for m in mem)
+                     or all(m in entries for m in mem))):
+            o["interval"] = "1m"
+            o["tolerance"] = 100
+        if o.get("tag") == "\u9ed8\u8ba4\u4ee3\u7406" \
+                and EXIT_AUTO in (o.get("outbounds") or []):
+            rest = [m for m in o["outbounds"] if m != EXIT_AUTO]
+            o["outbounds"] = [EXIT_AUTO] + rest
     if not ren:
         return cfg
     for o in obs:
