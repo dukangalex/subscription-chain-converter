@@ -1144,6 +1144,124 @@ def _own_singbox_chain(enodes, xnodes):
         return None
 
 
+def _chain_glyph_name(name):
+    base = name[2:].lstrip() if name.startswith("♻") else name
+    return "⛓ " + base
+
+
+def _mark_chain_groups_clash(cfg):
+    """Give every group that routes purely through chained exits the
+    chain glyph, so users can tell at a glance which groups are
+    two-hop. A group counts as a chain-exit group when every member
+    is an exit proxy (identified by carrying dialer-proxy). Selectors
+    of groups and the mixed manual group (entries + exits) keep their
+    names; references in group member lists and rule targets are
+    rewritten to match."""
+    exits = {p.get("name") for p in cfg.get("proxies") or []
+             if isinstance(p, dict) and p.get("dialer-proxy")}
+    groups = cfg.get("proxy-groups") or []
+    if not exits or not groups:
+        return cfg
+    existing = {g.get("name") for g in groups if isinstance(g, dict)}
+    ren = {}
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        name = g.get("name") or ""
+        mem = [m for m in g.get("proxies") or [] if isinstance(m, str)]
+        if (not mem or name.startswith("⛓")
+                or not all(m in exits for m in mem)):
+            continue
+        new = _chain_glyph_name(name)
+        if new not in existing:
+            ren[name] = new
+            g["name"] = new
+            existing.add(new)
+    if not ren:
+        return cfg
+    for g in groups:
+        if isinstance(g, dict) and g.get("proxies"):
+            g["proxies"] = [ren.get(m, m) for m in g["proxies"]]
+    out_rules = []
+    for r in cfg.get("rules") or []:
+        if isinstance(r, str) and "," in r:
+            parts = r.split(",")
+            idx = -2 if parts[-1].strip() == "no-resolve" else -1
+            if parts[idx].strip() in ren:
+                parts[idx] = ren[parts[idx].strip()]
+                r = ",".join(parts)
+        out_rules.append(r)
+    if out_rules:
+        cfg["rules"] = out_rules
+    return cfg
+
+
+def _finish_chain_clash(body):
+    import yaml
+    try:
+        cfg = yaml.safe_load(body)
+        if isinstance(cfg, dict):
+            _mark_chain_groups_clash(cfg)
+            return yaml.safe_dump(cfg, allow_unicode=True,
+                                  sort_keys=False)
+    except Exception as e:
+        print("chain mark pass (clash) failed:", e, flush=True)
+    return body
+
+
+def _mark_chain_groups_singbox(cfg):
+    """sing-box twin of _mark_chain_groups_clash: an outbound group
+    whose members all carry detour (the chained exits) gets the chain
+    glyph; member lists, detours and route targets are rewritten."""
+    exits = {o.get("tag") for o in cfg.get("outbounds") or []
+             if isinstance(o, dict) and o.get("detour")}
+    obs = cfg.get("outbounds") or []
+    if not exits or not obs:
+        return cfg
+    existing = {o.get("tag") for o in obs if isinstance(o, dict)}
+    ren = {}
+    for o in obs:
+        if not isinstance(o, dict):
+            continue
+        tag = o.get("tag") or ""
+        mem = [m for m in o.get("outbounds") or []
+               if isinstance(m, str)]
+        if (not mem or tag.startswith("⛓")
+                or not all(m in exits for m in mem)):
+            continue
+        new = _chain_glyph_name(tag)
+        if new not in existing:
+            ren[tag] = new
+            o["tag"] = new
+            existing.add(new)
+    if not ren:
+        return cfg
+    for o in obs:
+        if not isinstance(o, dict):
+            continue
+        if o.get("outbounds"):
+            o["outbounds"] = [ren.get(m, m) for m in o["outbounds"]]
+        if o.get("detour") in ren:
+            o["detour"] = ren[o["detour"]]
+    route = cfg.get("route") or {}
+    if route.get("final") in ren:
+        route["final"] = ren[route["final"]]
+    for r in route.get("rules") or []:
+        if isinstance(r, dict) and r.get("outbound") in ren:
+            r["outbound"] = ren[r["outbound"]]
+    return cfg
+
+
+def _finish_chain_singbox(body):
+    try:
+        cfg = json.loads(body)
+        if isinstance(cfg, dict):
+            _mark_chain_groups_singbox(cfg)
+            return json.dumps(cfg, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("chain mark pass (singbox) failed:", e, flush=True)
+    return body
+
 def merge_singbox(entry_items, exit_items):
     STAGE["cur"] = "entry-convert"
     ecfg = json.loads(sub_convert("singbox", entry_items))
@@ -1156,11 +1274,11 @@ def merge_singbox(entry_items, exit_items):
     built = _own_singbox_chain(enodes, xnodes)
     if built is not None:
         print("chain target=singbox path=own", flush=True)
-        return _ech_fix_body(built[0]), built[1]
+        return _ech_fix_body(_finish_chain_singbox(built[0])), built[1]
     scripted = _overlay_chain(enodes, xnodes)
     if scripted is not None:
         print("chain target=singbox path=scripted", flush=True)
-        return _ech_fix_body(scripted[0]), scripted[1]
+        return _ech_fix_body(_finish_chain_singbox(scripted[0])), scripted[1]
     emap = {o["tag"]: "入口-" + o["tag"] for o in enodes}
     xmap = {o["tag"]: "出口-" + o["tag"] for o in xnodes}
     out = [o for o in xcfg["outbounds"] if o.get("type") in BUILTIN_TYPES]
@@ -1243,6 +1361,7 @@ def merge_singbox(entry_items, exit_items):
             r.get("rule_set") == ["geosite-cn"] for r in drules):
         drules.insert(0, {"rule_set": ["geosite-cn"], "server": "dns_direct"})
     print("chain target=singbox path=fallback", flush=True)
+    _mark_chain_groups_singbox(xcfg)
     return json.dumps(_ensure_ech_route(xcfg), ensure_ascii=False,
                       indent=2), "application/json; charset=utf-8"
 
@@ -1496,11 +1615,11 @@ def merge_clash(entry_items, exit_items):
     built = _own_clash_chain(eprox, xprox)
     if built is not None:
         print("chain target=clash path=own", flush=True)
-        return built
+        return (_finish_chain_clash(built[0]), built[1])
     scripted = _clashbase_chain(eprox, xprox)
     if scripted is not None:
         print("chain target=clash path=scripted", flush=True)
-        return scripted
+        return (_finish_chain_clash(scripted[0]), scripted[1])
     emap = {p["name"]: "入口-" + p["name"] for p in eprox}
     xmap = {p["name"]: "出口-" + p["name"] for p in xprox}
     newprox = []
@@ -1578,6 +1697,7 @@ def merge_clash(entry_items, exit_items):
         xy["rule-providers"] = providers
     else:
         xy["dns"] = CLASH_DNS
+    _mark_chain_groups_clash(xy)
     return (yaml.safe_dump(xy, allow_unicode=True, sort_keys=False),
             "text/yaml; charset=utf-8")
 
