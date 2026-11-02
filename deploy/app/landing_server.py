@@ -484,15 +484,230 @@ def clash_emit(node):
 
 # ------------------------------------------------------------- full configs
 # ------------------------------------------------------- region groups
-# Region definitions + grouping design ported from the user's
-# HiClash mihomoScript.js (regionDefinitions / createRegionGroup):
-# each region that actually has nodes gets a "<名>-自动选择"
-# url-test group plus a "<名>" select group holding the nodes and
-# the auto group; unmatched nodes collect into "其他节点"; strong
-# info words (airport notices) never prove a region.
-REGION_DEFS = [("香港","🇭🇰|香港|\\bHKG?\\b|hong[\\s_-]*kong"),("台湾","🇹🇼|台湾|台北|高雄|新北|桃园|新竹|\\bTWN?\\b|taiwan|taipei|hinet"),("日本","🇯🇵|日本|\\bJPN?\\b|japan|tokyo|osaka|东京|大阪"),("韩国","🇰🇷|韩国|(?:^|[^A-Za-z])KR(?:$|[^A-Za-z])|korea|seoul|首尔"),("新加坡","🇸🇬|新加坡|狮城|\\bSGP?\\b|singapore"),("美国","🇺🇸|美国|(?:^|[^A-Za-z])US(?:$|[^A-Za-z])|(?:^|[^A-Za-z])USA(?:$|[^A-Za-z])|america|united[\\s_-]*states|los[\\s_-]*angeles|洛杉矶|san[\\s_-]*jose|圣何塞|纽约|new[\\s_-]*york|芝加哥|chicago|达拉斯|dallas|西雅图|seattle|硅谷|矽谷|silicon|迈阿密|miami|凤凰城|phoenix"),("英国","🇬🇧|英国|(?:^|[^A-Za-z0-9])GB(?:$|[^A-Za-z])|united[\\s_-]*kingdom|london|伦敦"),("德国","🇩🇪|德国|(?:^|[^A-Za-z])DE(?:$|[^A-Za-z])|germany|frankfurt|法兰克福"),("荷兰","🇳🇱|荷兰|(?:^|[^A-Za-z])NL(?:$|[^A-Za-z])|nether?lands|amsterdam|阿姆斯特丹"),("马来西亚","🇲🇾|马来西亚|(?:^|[^A-Za-z])MY(?:$|[^A-Za-z])|malaysia|kuala[\\s_-]*lumpur|吉隆坡"),("泰国","🇹🇭|泰国|(?:^|[^A-Za-z])TH(?:$|[^A-Za-z])|thailand|bangkok|曼谷"),("越南","🇻🇳|越南|(?:^|[^A-Za-z])VN(?:$|[^A-Za-z])|vietnam|hanoi|河内|ho[\\s_-]*chi[\\s_-]*minh|胡志明"),("菲律宾","🇵🇭|菲律宾|(?:^|[^A-Za-z])PH(?:$|[^A-Za-z])|philippines|manila|马尼拉"),("印尼","🇮🇩|印尼|印度尼西亚|(?:^|[^A-Za-z])ID(?:$|[^A-Za-z])|indonesia|jakarta|雅加达"),("印度","🇮🇳|印度|(?:^|[^A-Za-z])IN(?:$|[^A-Za-z])|india|mumbai|孟买|delhi|德里"),("澳大利亚","🇦🇺|澳大利亚|澳洲|(?:^|[^A-Za-z])AU(?:$|[^A-Za-z])|australia|sydney|悉尼|melbourne|墨尔本"),("法国","🇫🇷|法国|(?:^|[^A-Za-z])FR(?:$|[^A-Za-z])|france|paris|巴黎"),("俄罗斯","🇷🇺|俄罗斯|(?:^|[^A-Za-z])RU(?:$|[^A-Za-z])|russia|moscow|莫斯科"),("意大利","🇮🇹|意大利|(?:^|[^A-Za-z])IT(?:$|[^A-Za-z])|\\bitaly\\b|rome|罗马"),("加拿大","🇨🇦|加拿大|(?:^|[^A-Za-z])CA(?:$|[^A-Za-z])|canada|toronto|多伦多"),("阿根廷","🇦🇷|阿根廷|(?:^|[^A-Za-z])AR(?:$|[^A-Za-z])|argentina|buenos[\\s_-]*aires|布宜诺斯艾利斯"),("巴西","🇧🇷|巴西|(?:^|[^A-Za-z])BR(?:$|[^A-Za-z])|brazil|sao[\\s_-]*paulo|圣保罗"),("墨西哥","🇲🇽|墨西哥|(?:^|[^A-Za-z])MX(?:$|[^A-Za-z])|mexico"),("沙特阿拉伯","🇸🇦|沙特阿拉伯|沙特|(?:^|[^A-Za-z])SA(?:$|[^A-Za-z])|saudi[\\s_-]*arabia"),("南非","🇿🇦|南非|(?:^|[^A-Za-z])ZA(?:$|[^A-Za-z])|south[\\s_-]*africa|johannesburg|约翰内斯堡"),("土耳其","🇹🇷|土耳其|(?:^|[^A-Za-z])TR(?:$|[^A-Za-z])|turkey|istanbul|伊斯坦布尔"),("文莱","🇧🇳|文莱|(?:^|[^A-Za-z])BN(?:$|[^A-Za-z])|brunei"),("柬埔寨","🇰🇭|柬埔寨|(?:^|[^A-Za-z])KH(?:$|[^A-Za-z])|cambodia|phnom[\\s_-]*penh|金边"),("老挝","🇱🇦|老挝|(?:^|[^A-Za-z])LA(?:$|[^A-Za-z])|\\blaos\\b|vientiane|万象"),("缅甸","🇲🇲|缅甸|(?:^|[^A-Za-z])MM(?:$|[^A-Za-z])|myanmar|yangon|仰光"),("奥地利","🇦🇹|奥地利|(?:^|[^A-Za-z])AT(?:$|[^A-Za-z])|austria|vienna|维也纳"),("比利时","🇧🇪|比利时|(?:^|[^A-Za-z])BE(?:$|[^A-Za-z])|belgium|brussels|布鲁塞尔"),("保加利亚","🇧🇬|保加利亚|(?:^|[^A-Za-z])BG(?:$|[^A-Za-z])|bulgaria|sofia|索非亚"),("克罗地亚","🇭🇷|克罗地亚|(?:^|[^A-Za-z])HR(?:$|[^A-Za-z])|croatia"),("塞浦路斯","🇨🇾|塞浦路斯|(?:^|[^A-Za-z])CY(?:$|[^A-Za-z])|cyprus"),("捷克","🇨🇿|捷克|捷克共和国|(?:^|[^A-Za-z])CZ(?:$|[^A-Za-z])|czech|prague|布拉格"),("丹麦","🇩🇰|丹麦|(?:^|[^A-Za-z])DK(?:$|[^A-Za-z])|denmark|copenhagen|哥本哈根"),("爱沙尼亚","🇪🇪|爱沙尼亚|(?:^|[^A-Za-z])EE(?:$|[^A-Za-z])|estonia"),("芬兰","🇫🇮|芬兰|(?:^|[^A-Za-z])FI(?:$|[^A-Za-z])|finland|helsinki|赫尔辛基"),("希腊","🇬🇷|希腊|(?:^|[^A-Za-z])GR(?:$|[^A-Za-z])|greece|athens|雅典"),("匈牙利","🇭🇺|匈牙利|(?:^|[^A-Za-z])HU(?:$|[^A-Za-z])|hungary|budapest|布达佩斯"),("爱尔兰","🇮🇪|爱尔兰|(?:^|[^A-Za-z])IE(?:$|[^A-Za-z])|ireland|dublin|都柏林"),("拉脱维亚","🇱🇻|拉脱维亚|(?:^|[^A-Za-z])LV(?:$|[^A-Za-z])|latvia"),("立陶宛","🇱🇹|立陶宛|(?:^|[^A-Za-z])LT(?:$|[^A-Za-z])|lithuania"),("卢森堡","🇱🇺|卢森堡|(?:^|[^A-Za-z])LU(?:$|[^A-Za-z])|luxembourg"),("马耳他","🇲🇹|马耳他|(?:^|[^A-Za-z])MT(?:$|[^A-Za-z])|malta"),("波兰","🇵🇱|波兰|(?:^|[^A-Za-z])PL(?:$|[^A-Za-z])|poland|warsaw|华沙"),("葡萄牙","🇵🇹|葡萄牙|(?:^|[^A-Za-z])PT(?:$|[^A-Za-z])|portugal|lisbon|里斯本"),("罗马尼亚","🇷🇴|罗马尼亚|(?:^|[^A-Za-z])RO(?:$|[^A-Za-z])|romania|bucharest|布加勒斯特"),("斯洛伐克","🇸🇰|斯洛伐克|(?:^|[^A-Za-z])SK(?:$|[^A-Za-z])|slovakia"),("斯洛文尼亚","🇸🇮|斯洛文尼亚|(?:^|[^A-Za-z])SI(?:$|[^A-Za-z])|slovenia"),("西班牙","🇪🇸|西班牙|(?:^|[^A-Za-z])ES(?:$|[^A-Za-z])|\\bspain\\b|madrid|马德里"),("瑞典","🇸🇪|瑞典|(?:^|[^A-Za-z])SE(?:$|[^A-Za-z])|sweden|stockholm|斯德哥尔摩"),("阿尔及利亚","🇩🇿|阿尔及利亚|(?:^|[^A-Za-z])DZ(?:$|[^A-Za-z])|algeria"),("安哥拉","🇦🇴|安哥拉|(?:^|[^A-Za-z])AO(?:$|[^A-Za-z])|angola"),("贝宁","🇧🇯|贝宁|(?:^|[^A-Za-z])BJ(?:$|[^A-Za-z])|benin"),("博茨瓦纳","🇧🇼|博茨瓦纳|(?:^|[^A-Za-z])BW(?:$|[^A-Za-z])|botswana"),("布基纳法索","🇧🇫|布基纳法索|(?:^|[^A-Za-z])BF(?:$|[^A-Za-z])|burkina[\\s_-]*faso"),("布隆迪","🇧🇮|布隆迪|(?:^|[^A-Za-z])BI(?:$|[^A-Za-z])|burundi"),("佛得角","🇨🇻|佛得角|(?:^|[^A-Za-z])CV(?:$|[^A-Za-z])|cabo[\\s_-]*verde|cape[\\s_-]*verde"),("喀麦隆","🇨🇲|喀麦隆|(?:^|[^A-Za-z])CM(?:$|[^A-Za-z])|cameroon"),("中非共和国","🇨🇫|中非共和国|中非|(?:^|[^A-Za-z])CF(?:$|[^A-Za-z])|central[\\s_-]*african"),("乍得","🇹🇩|乍得|(?:^|[^A-Za-z])TD(?:$|[^A-Za-z])|\\bchad\\b"),("科摩罗","🇰🇲|科摩罗|(?:^|[^A-Za-z])KM(?:$|[^A-Za-z])|comoros"),("刚果共和国","🇨🇬|刚果共和国|刚果（布）|(?:^|[^A-Za-z])CG(?:$|[^A-Za-z])|\\bcongo\\b"),("刚果民主共和国","🇨🇩|刚果民主共和国|刚果（金）|民主刚果|(?:^|[^A-Za-z])CD(?:$|[^A-Za-z])|dr[\\s_-]*congo|democratic[\\s_-]*republic[\\s_-]*of[\\s_-]*the[\\s_-]*congo"),("科特迪瓦","🇨🇮|科特迪瓦|象牙海岸|(?:^|[^A-Za-z])CI(?:$|[^A-Za-z])|cote[\\s_-]*d.ivoire|ivory[\\s_-]*coast"),("吉布提","🇩🇯|吉布提|(?:^|[^A-Za-z])DJ(?:$|[^A-Za-z])|djibouti"),("埃及","🇪🇬|埃及|(?:^|[^A-Za-z])EG(?:$|[^A-Za-z])|egypt|cairo|开罗"),("赤道几内亚","🇬🇶|赤道几内亚|(?:^|[^A-Za-z])GQ(?:$|[^A-Za-z])|equatorial[\\s_-]*guinea"),("厄立特里亚","🇪🇷|厄立特里亚|(?:^|[^A-Za-z])ER(?:$|[^A-Za-z])|eritrea"),("斯威士兰","🇸🇿|斯威士兰|埃斯瓦蒂尼|(?:^|[^A-Za-z])SZ(?:$|[^A-Za-z])|eswatini|swaziland"),("埃塞俄比亚","🇪🇹|埃塞俄比亚|(?:^|[^A-Za-z])ET(?:$|[^A-Za-z])|ethiopia"),("加蓬","🇬🇦|加蓬|(?:^|[^A-Za-z])GA(?:$|[^A-Za-z])|\\bgabon\\b"),("冈比亚","🇬🇲|冈比亚|(?:^|[^A-Za-z])GM(?:$|[^A-Za-z])|gambia"),("加纳","🇬🇭|加纳|(?:^|[^A-Za-z])GH(?:$|[^A-Za-z])|\\bghana\\b"),("几内亚","🇬🇳|几内亚|(?:^|[^A-Za-z])GN(?:$|[^A-Za-z])|\\bguinea\\b"),("几内亚比绍","🇬🇼|几内亚比绍|(?:^|[^A-Za-z])GW(?:$|[^A-Za-z])|guinea-bissau|guinea[\\s_-]*bissau"),("肯尼亚","🇰🇪|肯尼亚|(?:^|[^A-Za-z])KE(?:$|[^A-Za-z])|kenya|nairobi|内罗毕"),("莱索托","🇱🇸|莱索托|(?:^|[^A-Za-z])LS(?:$|[^A-Za-z])|lesotho"),("利比里亚","🇱🇷|利比里亚|(?:^|[^A-Za-z])LR(?:$|[^A-Za-z])|liberia"),("利比亚","🇱🇾|利比亚|(?:^|[^A-Za-z])LY(?:$|[^A-Za-z])|\\blibya\\b"),("马达加斯加","🇲🇬|马达加斯加|(?:^|[^A-Za-z])MG(?:$|[^A-Za-z])|madagascar"),("马拉维","🇲🇼|马拉维|(?:^|[^A-Za-z])MW(?:$|[^A-Za-z])|malawi"),("马里","🇲🇱|马里|(?:^|[^A-Za-z])ML(?:$|[^A-Za-z])|\\bmali\\b"),("毛里塔尼亚","🇲🇷|毛里塔尼亚|(?:^|[^A-Za-z])MR(?:$|[^A-Za-z])|mauritania"),("毛里求斯","🇲🇺|毛里求斯|(?:^|[^A-Za-z])MU(?:$|[^A-Za-z])|mauritius"),("摩洛哥","🇲🇦|摩洛哥|(?:^|[^A-Za-z])MA(?:$|[^A-Za-z])|morocco|casablanca|卡萨布兰卡"),("莫桑比克","🇲🇿|莫桑比克|(?:^|[^A-Za-z])MZ(?:$|[^A-Za-z])|mozambique"),("纳米比亚","🇳🇦|纳米比亚|(?:^|[^A-Za-z])NA(?:$|[^A-Za-z])|\\bnamibia\\b"),("尼日尔","🇳🇪|尼日尔|(?:^|[^A-Za-z])NE(?:$|[^A-Za-z])|\\bniger\\b"),("尼日利亚","🇳🇬|尼日利亚|(?:^|[^A-Za-z])NG(?:$|[^A-Za-z])|nigeria|lagos|拉各斯"),("卢旺达","🇷🇼|卢旺达|(?:^|[^A-Za-z])RW(?:$|[^A-Za-z])|rwanda"),("圣多美和普林西比","🇸🇹|圣多美和普林西比|(?:^|[^A-Za-z])ST(?:$|[^A-Za-z])|sao[\\s_-]*tome"),("塞内加尔","🇸🇳|塞内加尔|(?:^|[^A-Za-z])SN(?:$|[^A-Za-z])|senegal"),("塞舌尔","🇸🇨|塞舌尔|(?:^|[^A-Za-z])SC(?:$|[^A-Za-z])|seychelles"),("塞拉利昂","🇸🇱|塞拉利昂|(?:^|[^A-Za-z])SL(?:$|[^A-Za-z])|sierra[\\s_-]*leone"),("索马里","🇸🇴|索马里|(?:^|[^A-Za-z])SO(?:$|[^A-Za-z])|somalia"),("南苏丹","🇸🇸|南苏丹|(?:^|[^A-Za-z])SS(?:$|[^A-Za-z])|south[\\s_-]*sudan"),("苏丹","🇸🇩|苏丹|(?:^|[^A-Za-z])SD(?:$|[^A-Za-z])|\\bsudan\\b"),("坦桑尼亚","🇹🇿|坦桑尼亚|(?:^|[^A-Za-z])TZ(?:$|[^A-Za-z])|tanzania"),("多哥","🇹🇬|多哥|(?:^|[^A-Za-z])TG(?:$|[^A-Za-z])|\\btogo\\b"),("突尼斯","🇹🇳|突尼斯|(?:^|[^A-Za-z])TN(?:$|[^A-Za-z])|tunisia"),("乌干达","🇺🇬|乌干达|(?:^|[^A-Za-z])UG(?:$|[^A-Za-z])|uganda"),("赞比亚","🇿🇲|赞比亚|(?:^|[^A-Za-z])ZM(?:$|[^A-Za-z])|zambia"),("津巴布韦","🇿🇼|津巴布韦|(?:^|[^A-Za-z])ZW(?:$|[^A-Za-z])|zimbabwe"),("阿富汗","🇦🇫|阿富汗|afghanistan"),("亚美尼亚","🇦🇲|亚美尼亚|armenia"),("阿塞拜疆","🇦🇿|阿塞拜疆|azerbaijan"),("巴林","🇧🇭|巴林|bahrain"),("孟加拉国","🇧🇩|孟加拉国|bangladesh"),("不丹","🇧🇹|不丹|bhutan"),("格鲁吉亚","🇬🇪|格鲁吉亚|georgia"),("伊朗","🇮🇷|伊朗|iran"),("伊拉克","🇮🇶|伊拉克|iraq"),("以色列","🇮🇱|以色列|israel"),("约旦","🇯🇴|约旦|jordan"),("哈萨克斯坦","🇰🇿|哈萨克斯坦|kazakhstan"),("科威特","🇰🇼|科威特|kuwait"),("吉尔吉斯斯坦","🇰🇬|吉尔吉斯斯坦|kyrgyzstan"),("黎巴嫩","🇱🇧|黎巴嫩|lebanon"),("马尔代夫","🇲🇻|马尔代夫|maldives"),("蒙古","🇲🇳|蒙古|mongolia"),("尼泊尔","🇳🇵|尼泊尔|nepal"),("朝鲜","🇰🇵|朝鲜|north[\\s_-]*korea|dprk"),("阿曼","🇴🇲|阿曼|oman"),("巴基斯坦","🇵🇰|巴基斯坦|pakistan"),("巴勒斯坦","🇵🇸|巴勒斯坦|palestine|west[\\s_-]*bank|gaza"),("卡塔尔","🇶🇦|卡塔尔|qatar"),("斯里兰卡","🇱🇰|斯里兰卡|sri[\\s_-]*lanka"),("叙利亚","🇸🇾|叙利亚|syria"),("塔吉克斯坦","🇹🇯|塔吉克斯坦|tajikistan"),("东帝汶","🇹🇱|东帝汶|timor[\\s_-]*leste|east[\\s_-]*timor"),("土库曼斯坦","🇹🇲|土库曼斯坦|turkmenistan"),("阿联酋","🇦🇪|阿联酋|迪拜|阿布扎比|dubai|abu[s_-]*dhabi|uae|united[\\s_-]*arab[\\s_-]*emirates"),("乌兹别克斯坦","🇺🇿|乌兹别克斯坦|uzbekistan"),("也门","🇾🇪|也门|yemen"),("澳门","🇲🇴|澳门|macau|macao"),("阿尔巴尼亚","🇦🇱|阿尔巴尼亚|albania"),("安道尔","🇦🇩|安道尔|andorra"),("白俄罗斯","🇧🇾|白俄罗斯|belarus"),("波斯尼亚和黑塞哥维那","🇧🇦|波斯尼亚和黑塞哥维那|bosnia|bosnia[\\s_-]*and[\\s_-]*herzegovina"),("冰岛","🇮🇸|冰岛|iceland"),("列支敦士登","🇱🇮|列支敦士登|liechtenstein"),("摩尔多瓦","🇲🇩|摩尔多瓦|moldova"),("摩纳哥","🇲🇨|摩纳哥|monaco"),("黑山","🇲🇪|黑山|montenegro"),("北马其顿","🇲🇰|北马其顿|north[\\s_-]*macedonia|macedonia"),("挪威","🇳🇴|挪威|norway"),("圣马力诺","🇸🇲|圣马力诺|san[\\s_-]*marino"),("塞尔维亚","🇷🇸|塞尔维亚|serbia"),("瑞士","🇨🇭|瑞士|switzerland"),("乌克兰","🇺🇦|乌克兰|ukraine"),("梵蒂冈","🇻🇦|梵蒂冈|vatican"),("科索沃","🇽🇰|科索沃|kosovo"),("巴哈马","🇧🇸|巴哈马|bahamas"),("巴巴多斯","🇧🇧|巴巴多斯|barbados"),("伯利兹","🇧🇿|伯利兹|belize"),("哥斯达黎加","🇨🇷|哥斯达黎加|costa[\\s_-]*rica"),("古巴","🇨🇺|古巴|cuba"),("多米尼克","🇩🇲|多米尼克|dominica"),("多米尼加","🇩🇴|多米尼加|dominican[\\s_-]*republic|dominican"),("萨尔瓦多","🇸🇻|萨尔瓦多|el[\\s_-]*salvador"),("格林纳达","🇬🇩|格林纳达|grenada"),("危地马拉","🇬🇹|危地马拉|guatemala"),("海地","🇭🇹|海地|haiti"),("洪都拉斯","🇭🇳|洪都拉斯|honduras"),("牙买加","🇯🇲|牙买加|jamaica"),("尼加拉瓜","🇳🇮|尼加拉瓜|nicaragua"),("巴拿马","🇵🇦|巴拿马|panama"),("圣基茨和尼维斯","🇰🇳|圣基茨和尼维斯|saint[\\s_-]*kitts|st[\\s_-]*kitts"),("圣卢西亚","🇱🇨|圣卢西亚|saint[\\s_-]*lucia|st[\\s_-]*lucia"),("圣文森特和格林纳丁斯","🇻🇨|圣文森特和格林纳丁斯|saint[\\s_-]*vincent|st[\\s_-]*vincent"),("特立尼达和多巴哥","🇹🇹|特立尼达和多巴哥|trinidad[\\s_-]*and[\\s_-]*tobago"),("安提瓜和巴布达","🇦🇬|安提瓜和巴布达|antigua[\\s_-]*and[\\s_-]*barbuda"),("哥伦比亚","🇨🇴|哥伦比亚|波哥大|麦德林|(?:^|[^A-Za-z])CO(?:$|[^A-Za-z])|bogot[aá]|medellin|colombia"),("智利","🇨🇱|智利|chile"),("秘鲁","🇵🇪|秘鲁|peru"),("乌拉圭","🇺🇾|乌拉圭|uruguay"),("巴拉圭","🇵🇾|巴拉圭|paraguay"),("玻利维亚","🇧🇴|玻利维亚|bolivia"),("厄瓜多尔","🇪🇨|厄瓜多尔|ecuador"),("委内瑞拉","🇻🇪|委内瑞拉|venezuela"),("圭亚那","🇬🇾|圭亚那|guyana"),("苏里南","🇸🇷|苏里南|suriname"),("新西兰","🇳🇿|新西兰|new[\\s_-]*zealand|auckland|奥克兰|wellington|惠灵顿"),("斐济","🇫🇯|斐济|fiji"),("巴布亚新几内亚","🇵🇬|巴布亚新几内亚|papua[\\s_-]*new[\\s_-]*guinea"),("所罗门群岛","🇸🇧|所罗门群岛|solomon[\\s_-]*islands"),("瓦努阿图","🇻🇺|瓦努阿图|vanuatu"),("萨摩亚","🇼🇸|萨摩亚|samoa"),("汤加","🇹🇴|汤加|tonga"),("基里巴斯","🇰🇮|基里巴斯|kiribati"),("图瓦卢","🇹🇻|图瓦卢|tuvalu"),("瑙鲁","🇳🇷|瑙鲁|nauru"),("帕劳","🇵🇼|帕劳|palau"),("马绍尔群岛","🇲🇭|马绍尔群岛|marshall[\\s_-]*islands"),("密克罗尼西亚","🇫🇲|密克罗尼西亚|micronesia|federated[\\s_-]*states[\\s_-]*of[\\s_-]*micronesia"),("关岛","🇬🇺|关岛|guam"),("波多黎各","🇵🇷|波多黎各|puerto[\\s_-]*rico"),("百慕大","🇧🇲|百慕大|bermuda"),("格陵兰","🇬🇱|格陵兰|greenland"),("库拉索","🇨🇼|库拉索|curacao|curaçao"),("阿鲁巴","🇦🇼|阿鲁巴|aruba"),("开曼群岛","🇰🇾|开曼群岛|cayman[\\s_-]*islands"),("英属维尔京群岛","🇻🇬|英属维尔京群岛|british[\\s_-]*virgin[\\s_-]*islands"),("美属维尔京群岛","🇻🇮|美属维尔京群岛|us[\\s_-]*virgin[\\s_-]*islands|u\\.s\\.[\\s_-]*virgin[\\s_-]*islands"),("新喀里多尼亚","🇳🇨|新喀里多尼亚|new[\\s_-]*caledonia"),("法属波利尼西亚","🇵🇫|法属波利尼西亚|french[\\s_-]*polynesia"),("库克群岛","🇨🇰|库克群岛|cook[\\s_-]*islands"),("纽埃","🇳🇺|纽埃|niue")]
+# Full plain-conversion design ported from the user's HiClash
+# mihomoScript.js: the script's node filter (info nodes dropped),
+# name normalization (region flag completed), reserved-name guard,
+# and createRegionGroup grouping — each region that has nodes gets
+# a "<名>-自动选择" url-test group plus a "<名>" select group (auto
+# group first = the default, per the user's instruction); regions
+# lead 默认代理; unmatched nodes collect into "其他节点"; rate /
+# residential pseudo-regions join in addition to the geographic
+# region. Definitions below are the script's, verbatim.
+REGION_DEFS = [
+    ("香港", "🇭🇰", "🇭🇰|香港|\\bHKG?\\b|hong[\\s_-]*kong"),
+    ("台湾", "🇹🇼", "🇹🇼|台湾|台北|高雄|新北|桃园|新竹|\\bTWN?\\b|taiwan|taipei|hinet"),
+    ("日本", "🇯🇵", "🇯🇵|日本|\\bJPN?\\b|japan|tokyo|osaka|东京|大阪"),
+    ("韩国", "🇰🇷", "🇰🇷|韩国|(?:^|[^A-Za-z])KR(?:$|[^A-Za-z])|korea|seoul|首尔"),
+    ("新加坡", "🇸🇬", "🇸🇬|新加坡|狮城|\\bSGP?\\b|singapore"),
+    ("美国", "🇺🇸", "🇺🇸|美国|(?:^|[^A-Za-z])US(?:$|[^A-Za-z])|(?:^|[^A-Za-z])USA(?:$|[^A-Za-z])|america|united[\\s_-]*states|los[\\s_-]*angeles|洛杉矶|san[\\s_-]*jose|圣何塞|纽约|new[\\s_-]*york|芝加哥|chicago|达拉斯|dallas|西雅图|seattle|硅谷|矽谷|silicon|迈阿密|miami|凤凰城|phoenix"),
+    ("英国", "🇬🇧", "🇬🇧|英国|(?:^|[^A-Za-z0-9])GB(?:$|[^A-Za-z])|united[\\s_-]*kingdom|london|伦敦"),
+    ("德国", "🇩🇪", "🇩🇪|德国|(?:^|[^A-Za-z])DE(?:$|[^A-Za-z])|germany|frankfurt|法兰克福"),
+    ("荷兰", "🇳🇱", "🇳🇱|荷兰|(?:^|[^A-Za-z])NL(?:$|[^A-Za-z])|nether?lands|amsterdam|阿姆斯特丹"),
+    ("马来西亚", "🇲🇾", "🇲🇾|马来西亚|(?:^|[^A-Za-z])MY(?:$|[^A-Za-z])|malaysia|kuala[\\s_-]*lumpur|吉隆坡"),
+    ("泰国", "🇹🇭", "🇹🇭|泰国|(?:^|[^A-Za-z])TH(?:$|[^A-Za-z])|thailand|bangkok|曼谷"),
+    ("越南", "🇻🇳", "🇻🇳|越南|(?:^|[^A-Za-z])VN(?:$|[^A-Za-z])|vietnam|hanoi|河内|ho[\\s_-]*chi[\\s_-]*minh|胡志明"),
+    ("菲律宾", "🇵🇭", "🇵🇭|菲律宾|(?:^|[^A-Za-z])PH(?:$|[^A-Za-z])|philippines|manila|马尼拉"),
+    ("印尼", "🇮🇩", "🇮🇩|印尼|印度尼西亚|(?:^|[^A-Za-z])ID(?:$|[^A-Za-z])|indonesia|jakarta|雅加达"),
+    ("印度", "🇮🇳", "🇮🇳|印度|(?:^|[^A-Za-z])IN(?:$|[^A-Za-z])|india|mumbai|孟买|delhi|德里"),
+    ("澳大利亚", "🇦🇺", "🇦🇺|澳大利亚|澳洲|(?:^|[^A-Za-z])AU(?:$|[^A-Za-z])|australia|sydney|悉尼|melbourne|墨尔本"),
+    ("法国", "🇫🇷", "🇫🇷|法国|(?:^|[^A-Za-z])FR(?:$|[^A-Za-z])|france|paris|巴黎"),
+    ("俄罗斯", "🇷🇺", "🇷🇺|俄罗斯|(?:^|[^A-Za-z])RU(?:$|[^A-Za-z])|russia|moscow|莫斯科"),
+    ("意大利", "🇮🇹", "🇮🇹|意大利|(?:^|[^A-Za-z])IT(?:$|[^A-Za-z])|\\bitaly\\b|rome|罗马"),
+    ("加拿大", "🇨🇦", "🇨🇦|加拿大|(?:^|[^A-Za-z])CA(?:$|[^A-Za-z])|canada|toronto|多伦多"),
+    ("阿根廷", "🇦🇷", "🇦🇷|阿根廷|(?:^|[^A-Za-z])AR(?:$|[^A-Za-z])|argentina|buenos[\\s_-]*aires|布宜诺斯艾利斯"),
+    ("巴西", "🇧🇷", "🇧🇷|巴西|(?:^|[^A-Za-z])BR(?:$|[^A-Za-z])|brazil|sao[\\s_-]*paulo|圣保罗"),
+    ("墨西哥", "🇲🇽", "🇲🇽|墨西哥|(?:^|[^A-Za-z])MX(?:$|[^A-Za-z])|mexico"),
+    ("沙特阿拉伯", "🇸🇦", "🇸🇦|沙特阿拉伯|沙特|(?:^|[^A-Za-z])SA(?:$|[^A-Za-z])|saudi[\\s_-]*arabia"),
+    ("南非", "🇿🇦", "🇿🇦|南非|(?:^|[^A-Za-z])ZA(?:$|[^A-Za-z])|south[\\s_-]*africa|johannesburg|约翰内斯堡"),
+    ("土耳其", "🇹🇷", "🇹🇷|土耳其|(?:^|[^A-Za-z])TR(?:$|[^A-Za-z])|turkey|istanbul|伊斯坦布尔"),
+    ("文莱", "🇧🇳", "🇧🇳|文莱|(?:^|[^A-Za-z])BN(?:$|[^A-Za-z])|brunei"),
+    ("柬埔寨", "🇰🇭", "🇰🇭|柬埔寨|(?:^|[^A-Za-z])KH(?:$|[^A-Za-z])|cambodia|phnom[\\s_-]*penh|金边"),
+    ("老挝", "🇱🇦", "🇱🇦|老挝|(?:^|[^A-Za-z])LA(?:$|[^A-Za-z])|\\blaos\\b|vientiane|万象"),
+    ("缅甸", "🇲🇲", "🇲🇲|缅甸|(?:^|[^A-Za-z])MM(?:$|[^A-Za-z])|myanmar|yangon|仰光"),
+    ("奥地利", "🇦🇹", "🇦🇹|奥地利|(?:^|[^A-Za-z])AT(?:$|[^A-Za-z])|austria|vienna|维也纳"),
+    ("比利时", "🇧🇪", "🇧🇪|比利时|(?:^|[^A-Za-z])BE(?:$|[^A-Za-z])|belgium|brussels|布鲁塞尔"),
+    ("保加利亚", "🇧🇬", "🇧🇬|保加利亚|(?:^|[^A-Za-z])BG(?:$|[^A-Za-z])|bulgaria|sofia|索非亚"),
+    ("克罗地亚", "🇭🇷", "🇭🇷|克罗地亚|(?:^|[^A-Za-z])HR(?:$|[^A-Za-z])|croatia"),
+    ("塞浦路斯", "🇨🇾", "🇨🇾|塞浦路斯|(?:^|[^A-Za-z])CY(?:$|[^A-Za-z])|cyprus"),
+    ("捷克", "🇨🇿", "🇨🇿|捷克|捷克共和国|(?:^|[^A-Za-z])CZ(?:$|[^A-Za-z])|czech|prague|布拉格"),
+    ("丹麦", "🇩🇰", "🇩🇰|丹麦|(?:^|[^A-Za-z])DK(?:$|[^A-Za-z])|denmark|copenhagen|哥本哈根"),
+    ("爱沙尼亚", "🇪🇪", "🇪🇪|爱沙尼亚|(?:^|[^A-Za-z])EE(?:$|[^A-Za-z])|estonia"),
+    ("芬兰", "🇫🇮", "🇫🇮|芬兰|(?:^|[^A-Za-z])FI(?:$|[^A-Za-z])|finland|helsinki|赫尔辛基"),
+    ("希腊", "🇬🇷", "🇬🇷|希腊|(?:^|[^A-Za-z])GR(?:$|[^A-Za-z])|greece|athens|雅典"),
+    ("匈牙利", "🇭🇺", "🇭🇺|匈牙利|(?:^|[^A-Za-z])HU(?:$|[^A-Za-z])|hungary|budapest|布达佩斯"),
+    ("爱尔兰", "🇮🇪", "🇮🇪|爱尔兰|(?:^|[^A-Za-z])IE(?:$|[^A-Za-z])|ireland|dublin|都柏林"),
+    ("拉脱维亚", "🇱🇻", "🇱🇻|拉脱维亚|(?:^|[^A-Za-z])LV(?:$|[^A-Za-z])|latvia"),
+    ("立陶宛", "🇱🇹", "🇱🇹|立陶宛|(?:^|[^A-Za-z])LT(?:$|[^A-Za-z])|lithuania"),
+    ("卢森堡", "🇱🇺", "🇱🇺|卢森堡|(?:^|[^A-Za-z])LU(?:$|[^A-Za-z])|luxembourg"),
+    ("马耳他", "🇲🇹", "🇲🇹|马耳他|(?:^|[^A-Za-z])MT(?:$|[^A-Za-z])|malta"),
+    ("波兰", "🇵🇱", "🇵🇱|波兰|(?:^|[^A-Za-z])PL(?:$|[^A-Za-z])|poland|warsaw|华沙"),
+    ("葡萄牙", "🇵🇹", "🇵🇹|葡萄牙|(?:^|[^A-Za-z])PT(?:$|[^A-Za-z])|portugal|lisbon|里斯本"),
+    ("罗马尼亚", "🇷🇴", "🇷🇴|罗马尼亚|(?:^|[^A-Za-z])RO(?:$|[^A-Za-z])|romania|bucharest|布加勒斯特"),
+    ("斯洛伐克", "🇸🇰", "🇸🇰|斯洛伐克|(?:^|[^A-Za-z])SK(?:$|[^A-Za-z])|slovakia"),
+    ("斯洛文尼亚", "🇸🇮", "🇸🇮|斯洛文尼亚|(?:^|[^A-Za-z])SI(?:$|[^A-Za-z])|slovenia"),
+    ("西班牙", "🇪🇸", "🇪🇸|西班牙|(?:^|[^A-Za-z])ES(?:$|[^A-Za-z])|\\bspain\\b|madrid|马德里"),
+    ("瑞典", "🇸🇪", "🇸🇪|瑞典|(?:^|[^A-Za-z])SE(?:$|[^A-Za-z])|sweden|stockholm|斯德哥尔摩"),
+    ("阿尔及利亚", "🇩🇿", "🇩🇿|阿尔及利亚|(?:^|[^A-Za-z])DZ(?:$|[^A-Za-z])|algeria"),
+    ("安哥拉", "🇦🇴", "🇦🇴|安哥拉|(?:^|[^A-Za-z])AO(?:$|[^A-Za-z])|angola"),
+    ("贝宁", "🇧🇯", "🇧🇯|贝宁|(?:^|[^A-Za-z])BJ(?:$|[^A-Za-z])|benin"),
+    ("博茨瓦纳", "🇧🇼", "🇧🇼|博茨瓦纳|(?:^|[^A-Za-z])BW(?:$|[^A-Za-z])|botswana"),
+    ("布基纳法索", "🇧🇫", "🇧🇫|布基纳法索|(?:^|[^A-Za-z])BF(?:$|[^A-Za-z])|burkina[\\s_-]*faso"),
+    ("布隆迪", "🇧🇮", "🇧🇮|布隆迪|(?:^|[^A-Za-z])BI(?:$|[^A-Za-z])|burundi"),
+    ("佛得角", "🇨🇻", "🇨🇻|佛得角|(?:^|[^A-Za-z])CV(?:$|[^A-Za-z])|cabo[\\s_-]*verde|cape[\\s_-]*verde"),
+    ("喀麦隆", "🇨🇲", "🇨🇲|喀麦隆|(?:^|[^A-Za-z])CM(?:$|[^A-Za-z])|cameroon"),
+    ("中非共和国", "🇨🇫", "🇨🇫|中非共和国|中非|(?:^|[^A-Za-z])CF(?:$|[^A-Za-z])|central[\\s_-]*african"),
+    ("乍得", "🇹🇩", "🇹🇩|乍得|(?:^|[^A-Za-z])TD(?:$|[^A-Za-z])|\\bchad\\b"),
+    ("科摩罗", "🇰🇲", "🇰🇲|科摩罗|(?:^|[^A-Za-z])KM(?:$|[^A-Za-z])|comoros"),
+    ("刚果共和国", "🇨🇬", "🇨🇬|刚果共和国|刚果（布）|(?:^|[^A-Za-z])CG(?:$|[^A-Za-z])|\\bcongo\\b"),
+    ("刚果民主共和国", "🇨🇩", "🇨🇩|刚果民主共和国|刚果（金）|民主刚果|(?:^|[^A-Za-z])CD(?:$|[^A-Za-z])|dr[\\s_-]*congo|democratic[\\s_-]*republic[\\s_-]*of[\\s_-]*the[\\s_-]*congo"),
+    ("科特迪瓦", "🇨🇮", "🇨🇮|科特迪瓦|象牙海岸|(?:^|[^A-Za-z])CI(?:$|[^A-Za-z])|cote[\\s_-]*d.ivoire|ivory[\\s_-]*coast"),
+    ("吉布提", "🇩🇯", "🇩🇯|吉布提|(?:^|[^A-Za-z])DJ(?:$|[^A-Za-z])|djibouti"),
+    ("埃及", "🇪🇬", "🇪🇬|埃及|(?:^|[^A-Za-z])EG(?:$|[^A-Za-z])|egypt|cairo|开罗"),
+    ("赤道几内亚", "🇬🇶", "🇬🇶|赤道几内亚|(?:^|[^A-Za-z])GQ(?:$|[^A-Za-z])|equatorial[\\s_-]*guinea"),
+    ("厄立特里亚", "🇪🇷", "🇪🇷|厄立特里亚|(?:^|[^A-Za-z])ER(?:$|[^A-Za-z])|eritrea"),
+    ("斯威士兰", "🇸🇿", "🇸🇿|斯威士兰|埃斯瓦蒂尼|(?:^|[^A-Za-z])SZ(?:$|[^A-Za-z])|eswatini|swaziland"),
+    ("埃塞俄比亚", "🇪🇹", "🇪🇹|埃塞俄比亚|(?:^|[^A-Za-z])ET(?:$|[^A-Za-z])|ethiopia"),
+    ("加蓬", "🇬🇦", "🇬🇦|加蓬|(?:^|[^A-Za-z])GA(?:$|[^A-Za-z])|\\bgabon\\b"),
+    ("冈比亚", "🇬🇲", "🇬🇲|冈比亚|(?:^|[^A-Za-z])GM(?:$|[^A-Za-z])|gambia"),
+    ("加纳", "🇬🇭", "🇬🇭|加纳|(?:^|[^A-Za-z])GH(?:$|[^A-Za-z])|\\bghana\\b"),
+    ("几内亚", "🇬🇳", "🇬🇳|几内亚|(?:^|[^A-Za-z])GN(?:$|[^A-Za-z])|\\bguinea\\b"),
+    ("几内亚比绍", "🇬🇼", "🇬🇼|几内亚比绍|(?:^|[^A-Za-z])GW(?:$|[^A-Za-z])|guinea-bissau|guinea[\\s_-]*bissau"),
+    ("肯尼亚", "🇰🇪", "🇰🇪|肯尼亚|(?:^|[^A-Za-z])KE(?:$|[^A-Za-z])|kenya|nairobi|内罗毕"),
+    ("莱索托", "🇱🇸", "🇱🇸|莱索托|(?:^|[^A-Za-z])LS(?:$|[^A-Za-z])|lesotho"),
+    ("利比里亚", "🇱🇷", "🇱🇷|利比里亚|(?:^|[^A-Za-z])LR(?:$|[^A-Za-z])|liberia"),
+    ("利比亚", "🇱🇾", "🇱🇾|利比亚|(?:^|[^A-Za-z])LY(?:$|[^A-Za-z])|\\blibya\\b"),
+    ("马达加斯加", "🇲🇬", "🇲🇬|马达加斯加|(?:^|[^A-Za-z])MG(?:$|[^A-Za-z])|madagascar"),
+    ("马拉维", "🇲🇼", "🇲🇼|马拉维|(?:^|[^A-Za-z])MW(?:$|[^A-Za-z])|malawi"),
+    ("马里", "🇲🇱", "🇲🇱|马里|(?:^|[^A-Za-z])ML(?:$|[^A-Za-z])|\\bmali\\b"),
+    ("毛里塔尼亚", "🇲🇷", "🇲🇷|毛里塔尼亚|(?:^|[^A-Za-z])MR(?:$|[^A-Za-z])|mauritania"),
+    ("毛里求斯", "🇲🇺", "🇲🇺|毛里求斯|(?:^|[^A-Za-z])MU(?:$|[^A-Za-z])|mauritius"),
+    ("摩洛哥", "🇲🇦", "🇲🇦|摩洛哥|(?:^|[^A-Za-z])MA(?:$|[^A-Za-z])|morocco|casablanca|卡萨布兰卡"),
+    ("莫桑比克", "🇲🇿", "🇲🇿|莫桑比克|(?:^|[^A-Za-z])MZ(?:$|[^A-Za-z])|mozambique"),
+    ("纳米比亚", "🇳🇦", "🇳🇦|纳米比亚|(?:^|[^A-Za-z])NA(?:$|[^A-Za-z])|\\bnamibia\\b"),
+    ("尼日尔", "🇳🇪", "🇳🇪|尼日尔|(?:^|[^A-Za-z])NE(?:$|[^A-Za-z])|\\bniger\\b"),
+    ("尼日利亚", "🇳🇬", "🇳🇬|尼日利亚|(?:^|[^A-Za-z])NG(?:$|[^A-Za-z])|nigeria|lagos|拉各斯"),
+    ("卢旺达", "🇷🇼", "🇷🇼|卢旺达|(?:^|[^A-Za-z])RW(?:$|[^A-Za-z])|rwanda"),
+    ("圣多美和普林西比", "🇸🇹", "🇸🇹|圣多美和普林西比|(?:^|[^A-Za-z])ST(?:$|[^A-Za-z])|sao[\\s_-]*tome"),
+    ("塞内加尔", "🇸🇳", "🇸🇳|塞内加尔|(?:^|[^A-Za-z])SN(?:$|[^A-Za-z])|senegal"),
+    ("塞舌尔", "🇸🇨", "🇸🇨|塞舌尔|(?:^|[^A-Za-z])SC(?:$|[^A-Za-z])|seychelles"),
+    ("塞拉利昂", "🇸🇱", "🇸🇱|塞拉利昂|(?:^|[^A-Za-z])SL(?:$|[^A-Za-z])|sierra[\\s_-]*leone"),
+    ("索马里", "🇸🇴", "🇸🇴|索马里|(?:^|[^A-Za-z])SO(?:$|[^A-Za-z])|somalia"),
+    ("南苏丹", "🇸🇸", "🇸🇸|南苏丹|(?:^|[^A-Za-z])SS(?:$|[^A-Za-z])|south[\\s_-]*sudan"),
+    ("苏丹", "🇸🇩", "🇸🇩|苏丹|(?:^|[^A-Za-z])SD(?:$|[^A-Za-z])|\\bsudan\\b"),
+    ("坦桑尼亚", "🇹🇿", "🇹🇿|坦桑尼亚|(?:^|[^A-Za-z])TZ(?:$|[^A-Za-z])|tanzania"),
+    ("多哥", "🇹🇬", "🇹🇬|多哥|(?:^|[^A-Za-z])TG(?:$|[^A-Za-z])|\\btogo\\b"),
+    ("突尼斯", "🇹🇳", "🇹🇳|突尼斯|(?:^|[^A-Za-z])TN(?:$|[^A-Za-z])|tunisia"),
+    ("乌干达", "🇺🇬", "🇺🇬|乌干达|(?:^|[^A-Za-z])UG(?:$|[^A-Za-z])|uganda"),
+    ("赞比亚", "🇿🇲", "🇿🇲|赞比亚|(?:^|[^A-Za-z])ZM(?:$|[^A-Za-z])|zambia"),
+    ("津巴布韦", "🇿🇼", "🇿🇼|津巴布韦|(?:^|[^A-Za-z])ZW(?:$|[^A-Za-z])|zimbabwe"),
+    ("阿富汗", "🇦🇫", "🇦🇫|阿富汗|afghanistan"),
+    ("亚美尼亚", "🇦🇲", "🇦🇲|亚美尼亚|armenia"),
+    ("阿塞拜疆", "🇦🇿", "🇦🇿|阿塞拜疆|azerbaijan"),
+    ("巴林", "🇧🇭", "🇧🇭|巴林|bahrain"),
+    ("孟加拉国", "🇧🇩", "🇧🇩|孟加拉国|bangladesh"),
+    ("不丹", "🇧🇹", "🇧🇹|不丹|bhutan"),
+    ("格鲁吉亚", "🇬🇪", "🇬🇪|格鲁吉亚|georgia"),
+    ("伊朗", "🇮🇷", "🇮🇷|伊朗|iran"),
+    ("伊拉克", "🇮🇶", "🇮🇶|伊拉克|iraq"),
+    ("以色列", "🇮🇱", "🇮🇱|以色列|israel"),
+    ("约旦", "🇯🇴", "🇯🇴|约旦|jordan"),
+    ("哈萨克斯坦", "🇰🇿", "🇰🇿|哈萨克斯坦|kazakhstan"),
+    ("科威特", "🇰🇼", "🇰🇼|科威特|kuwait"),
+    ("吉尔吉斯斯坦", "🇰🇬", "🇰🇬|吉尔吉斯斯坦|kyrgyzstan"),
+    ("黎巴嫩", "🇱🇧", "🇱🇧|黎巴嫩|lebanon"),
+    ("马尔代夫", "🇲🇻", "🇲🇻|马尔代夫|maldives"),
+    ("蒙古", "🇲🇳", "🇲🇳|蒙古|mongolia"),
+    ("尼泊尔", "🇳🇵", "🇳🇵|尼泊尔|nepal"),
+    ("朝鲜", "🇰🇵", "🇰🇵|朝鲜|north[\\s_-]*korea|dprk"),
+    ("阿曼", "🇴🇲", "🇴🇲|阿曼|oman"),
+    ("巴基斯坦", "🇵🇰", "🇵🇰|巴基斯坦|pakistan"),
+    ("巴勒斯坦", "🇵🇸", "🇵🇸|巴勒斯坦|palestine|west[\\s_-]*bank|gaza"),
+    ("卡塔尔", "🇶🇦", "🇶🇦|卡塔尔|qatar"),
+    ("斯里兰卡", "🇱🇰", "🇱🇰|斯里兰卡|sri[\\s_-]*lanka"),
+    ("叙利亚", "🇸🇾", "🇸🇾|叙利亚|syria"),
+    ("塔吉克斯坦", "🇹🇯", "🇹🇯|塔吉克斯坦|tajikistan"),
+    ("东帝汶", "🇹🇱", "🇹🇱|东帝汶|timor[\\s_-]*leste|east[\\s_-]*timor"),
+    ("土库曼斯坦", "🇹🇲", "🇹🇲|土库曼斯坦|turkmenistan"),
+    ("阿联酋", "🇦🇪", "🇦🇪|阿联酋|迪拜|阿布扎比|dubai|abu[s_-]*dhabi|uae|united[\\s_-]*arab[\\s_-]*emirates"),
+    ("乌兹别克斯坦", "🇺🇿", "🇺🇿|乌兹别克斯坦|uzbekistan"),
+    ("也门", "🇾🇪", "🇾🇪|也门|yemen"),
+    ("澳门", "🇲🇴", "🇲🇴|澳门|macau|macao"),
+    ("阿尔巴尼亚", "🇦🇱", "🇦🇱|阿尔巴尼亚|albania"),
+    ("安道尔", "🇦🇩", "🇦🇩|安道尔|andorra"),
+    ("白俄罗斯", "🇧🇾", "🇧🇾|白俄罗斯|belarus"),
+    ("波斯尼亚和黑塞哥维那", "🇧🇦", "🇧🇦|波斯尼亚和黑塞哥维那|bosnia|bosnia[\\s_-]*and[\\s_-]*herzegovina"),
+    ("冰岛", "🇮🇸", "🇮🇸|冰岛|iceland"),
+    ("列支敦士登", "🇱🇮", "🇱🇮|列支敦士登|liechtenstein"),
+    ("摩尔多瓦", "🇲🇩", "🇲🇩|摩尔多瓦|moldova"),
+    ("摩纳哥", "🇲🇨", "🇲🇨|摩纳哥|monaco"),
+    ("黑山", "🇲🇪", "🇲🇪|黑山|montenegro"),
+    ("北马其顿", "🇲🇰", "🇲🇰|北马其顿|north[\\s_-]*macedonia|macedonia"),
+    ("挪威", "🇳🇴", "🇳🇴|挪威|norway"),
+    ("圣马力诺", "🇸🇲", "🇸🇲|圣马力诺|san[\\s_-]*marino"),
+    ("塞尔维亚", "🇷🇸", "🇷🇸|塞尔维亚|serbia"),
+    ("瑞士", "🇨🇭", "🇨🇭|瑞士|switzerland"),
+    ("乌克兰", "🇺🇦", "🇺🇦|乌克兰|ukraine"),
+    ("梵蒂冈", "🇻🇦", "🇻🇦|梵蒂冈|vatican"),
+    ("科索沃", "🇽🇰", "🇽🇰|科索沃|kosovo"),
+    ("巴哈马", "🇧🇸", "🇧🇸|巴哈马|bahamas"),
+    ("巴巴多斯", "🇧🇧", "🇧🇧|巴巴多斯|barbados"),
+    ("伯利兹", "🇧🇿", "🇧🇿|伯利兹|belize"),
+    ("哥斯达黎加", "🇨🇷", "🇨🇷|哥斯达黎加|costa[\\s_-]*rica"),
+    ("古巴", "🇨🇺", "🇨🇺|古巴|cuba"),
+    ("多米尼克", "🇩🇲", "🇩🇲|多米尼克|dominica"),
+    ("多米尼加", "🇩🇴", "🇩🇴|多米尼加|dominican[\\s_-]*republic|dominican"),
+    ("萨尔瓦多", "🇸🇻", "🇸🇻|萨尔瓦多|el[\\s_-]*salvador"),
+    ("格林纳达", "🇬🇩", "🇬🇩|格林纳达|grenada"),
+    ("危地马拉", "🇬🇹", "🇬🇹|危地马拉|guatemala"),
+    ("海地", "🇭🇹", "🇭🇹|海地|haiti"),
+    ("洪都拉斯", "🇭🇳", "🇭🇳|洪都拉斯|honduras"),
+    ("牙买加", "🇯🇲", "🇯🇲|牙买加|jamaica"),
+    ("尼加拉瓜", "🇳🇮", "🇳🇮|尼加拉瓜|nicaragua"),
+    ("巴拿马", "🇵🇦", "🇵🇦|巴拿马|panama"),
+    ("圣基茨和尼维斯", "🇰🇳", "🇰🇳|圣基茨和尼维斯|saint[\\s_-]*kitts|st[\\s_-]*kitts"),
+    ("圣卢西亚", "🇱🇨", "🇱🇨|圣卢西亚|saint[\\s_-]*lucia|st[\\s_-]*lucia"),
+    ("圣文森特和格林纳丁斯", "🇻🇨", "🇻🇨|圣文森特和格林纳丁斯|saint[\\s_-]*vincent|st[\\s_-]*vincent"),
+    ("特立尼达和多巴哥", "🇹🇹", "🇹🇹|特立尼达和多巴哥|trinidad[\\s_-]*and[\\s_-]*tobago"),
+    ("安提瓜和巴布达", "🇦🇬", "🇦🇬|安提瓜和巴布达|antigua[\\s_-]*and[\\s_-]*barbuda"),
+    ("哥伦比亚", "🇨🇴", "🇨🇴|哥伦比亚|波哥大|麦德林|(?:^|[^A-Za-z])CO(?:$|[^A-Za-z])|bogot[aá]|medellin|colombia"),
+    ("智利", "🇨🇱", "🇨🇱|智利|chile"),
+    ("秘鲁", "🇵🇪", "🇵🇪|秘鲁|peru"),
+    ("乌拉圭", "🇺🇾", "🇺🇾|乌拉圭|uruguay"),
+    ("巴拉圭", "🇵🇾", "🇵🇾|巴拉圭|paraguay"),
+    ("玻利维亚", "🇧🇴", "🇧🇴|玻利维亚|bolivia"),
+    ("厄瓜多尔", "🇪🇨", "🇪🇨|厄瓜多尔|ecuador"),
+    ("委内瑞拉", "🇻🇪", "🇻🇪|委内瑞拉|venezuela"),
+    ("圭亚那", "🇬🇾", "🇬🇾|圭亚那|guyana"),
+    ("苏里南", "🇸🇷", "🇸🇷|苏里南|suriname"),
+    ("新西兰", "🇳🇿", "🇳🇿|新西兰|new[\\s_-]*zealand|auckland|奥克兰|wellington|惠灵顿"),
+    ("斐济", "🇫🇯", "🇫🇯|斐济|fiji"),
+    ("巴布亚新几内亚", "🇵🇬", "🇵🇬|巴布亚新几内亚|papua[\\s_-]*new[\\s_-]*guinea"),
+    ("所罗门群岛", "🇸🇧", "🇸🇧|所罗门群岛|solomon[\\s_-]*islands"),
+    ("瓦努阿图", "🇻🇺", "🇻🇺|瓦努阿图|vanuatu"),
+    ("萨摩亚", "🇼🇸", "🇼🇸|萨摩亚|samoa"),
+    ("汤加", "🇹🇴", "🇹🇴|汤加|tonga"),
+    ("基里巴斯", "🇰🇮", "🇰🇮|基里巴斯|kiribati"),
+    ("图瓦卢", "🇹🇻", "🇹🇻|图瓦卢|tuvalu"),
+    ("瑙鲁", "🇳🇷", "🇳🇷|瑙鲁|nauru"),
+    ("帕劳", "🇵🇼", "🇵🇼|帕劳|palau"),
+    ("马绍尔群岛", "🇲🇭", "🇲🇭|马绍尔群岛|marshall[\\s_-]*islands"),
+    ("密克罗尼西亚", "🇫🇲", "🇫🇲|密克罗尼西亚|micronesia|federated[\\s_-]*states[\\s_-]*of[\\s_-]*micronesia"),
+    ("关岛", "🇬🇺", "🇬🇺|关岛|guam"),
+    ("波多黎各", "🇵🇷", "🇵🇷|波多黎各|puerto[\\s_-]*rico"),
+    ("百慕大", "🇧🇲", "🇧🇲|百慕大|bermuda"),
+    ("格陵兰", "🇬🇱", "🇬🇱|格陵兰|greenland"),
+    ("库拉索", "🇨🇼", "🇨🇼|库拉索|curacao|curaçao"),
+    ("阿鲁巴", "🇦🇼", "🇦🇼|阿鲁巴|aruba"),
+    ("开曼群岛", "🇰🇾", "🇰🇾|开曼群岛|cayman[\\s_-]*islands"),
+    ("英属维尔京群岛", "🇻🇬", "🇻🇬|英属维尔京群岛|british[\\s_-]*virgin[\\s_-]*islands"),
+    ("美属维尔京群岛", "🇻🇮", "🇻🇮|美属维尔京群岛|us[\\s_-]*virgin[\\s_-]*islands|u\\.s\\.[\\s_-]*virgin[\\s_-]*islands"),
+    ("新喀里多尼亚", "🇳🇨", "🇳🇨|新喀里多尼亚|new[\\s_-]*caledonia"),
+    ("法属波利尼西亚", "🇵🇫", "🇵🇫|法属波利尼西亚|french[\\s_-]*polynesia"),
+    ("库克群岛", "🇨🇰", "🇨🇰|库克群岛|cook[\\s_-]*islands"),
+    ("纽埃", "🇳🇺", "🇳🇺|纽埃|niue"),
+]
 REGION_RES = []
-for _rn, _src in REGION_DEFS:
+for _rn, _flag, _src in REGION_DEFS:
     try:
         REGION_RES.append((_rn, re.compile(_src, re.I)))
     except re.error:
@@ -500,110 +715,300 @@ for _rn, _src in REGION_DEFS:
 STRONG_INFO = re.compile(
     r"剩余|已用|距离下次|下次重置|套餐|到期|过期|官网|官址|客服|订阅|工单|邮箱|网址"
     r"|流量\s*[:：]|traffic\s*[:：]|\bexpire\b|\bhttps?://|t\.me/", re.I)
+# HiClash excludeFilter, verbatim.
+EXCLUDE_FILTER = re.compile("\u7fa4|\u8fd4\u5229|\u5faa\u73af|\u5b98\u7f51|\u5ba2\u670d|\u7f51\u7ad9|\u7f51\u5740|\u83b7\u53d6|\u8ba2\u9605|\u6d41\u91cf|\u5230\u671f|\u673a\u573a|\u4e0b\u6b21|\u7248\u672c|\u5b98\u5740|\u5907\u7528|\u8fc7\u671f|\u5df2\u7528|\u8054\u7cfb|\u90ae\u7bb1|\u5de5\u5355|\u8d29\u5356|\u901a\u77e5|\u5012\u5356|\u9632\u6b62|\u56fd\u5185|\u5730\u5740|\u9891\u9053|\u7535\u62a5|\u65e0\u6cd5|\u8bf4\u660e|\u4f7f\u7528|\u63d0\u793a|\u8bbf\u95ee|\u652f\u6301|\u6559\u7a0b|\u5173\u6ce8|\u66f4\u65b0|\u4f5c\u8005|\u52a0\u5165|\u8d85\u65f6|\u6536\u85cf|\u4f18\u60e0|\u798f\u5229|\u9080\u8bf7|\u597d\u53cb|\u5931\u8054|\u9009\u62e9|\u5269\u4f59|\u516c\u76ca|\u53d1\u5e03|DIZTNA|\u901a\u8def|\u767b\u5f55|\u7981\u6b62|\u5b9a\u65f6|\u6e20\u9053|\u7262\u8bb0|\u6c38\u4e45|\u4f59\u989d|\u9601\u4e0b|\u672c\u7ad9|\u5237\u65b0|\u5bfc\u822a|\u5efa\u8bae|\u91cd\u7f6e|\u4ee5\u4e0b|\u8fc7\u6ee4|\u26a0\ufe0f|@|t\\.me\\/\\+|\\bexpire\\b|\\bhttps?:\\/\\/|\\btraffic\\b", re.I)
+# Traditional → Simplified folding for region matching only (names
+# themselves are never rewritten) — the script's map.
+TRAD2SIMP = {
+    "灣": "湾", "國": "国", "臺": "台", "東": "东", "島": "岛",
+    "亞": "亚", "倫": "伦", "蘭": "兰", "馬": "马", "賓": "宾",
+    "紐": "纽", "約": "约", "達": "达", "磯": "矶", "聖": "圣",
+    "門": "门", "韓": "韩", "羅": "罗", "蘇": "苏", "聯": "联",
+    "愛": "爱", "爾": "尔", "烏": "乌", "薩": "萨", "華": "华",
+    "頓": "顿", "維": "维", "緬": "缅", "廣": "广",
+}
+_TRAD_RE = re.compile("[" + "".join(TRAD2SIMP) + "]")
+
+
+def _fold_trad(text):
+    return _TRAD_RE.sub(lambda m: TRAD2SIMP[m.group(0)], str(text))
+
+
+# Rate / residential pseudo-regions (script's rateRegionDefinitions
+# + homeRegionDefinitions), matched in addition to the geo region.
+_ICON_BASE = ("https://fastly.jsdelivr.net/gh/dukangalex/HiClash"
+              "@assets-v1/Icons/svg/")
+EXTRA_DEFS = [
+    ("低倍率节点", _ICON_BASE + "Available.svg", re.compile("^(?!.*(?:\u5269|\u671f)).*(?:(?<!\\d)0\\.[0-5]|(?<=[ \\[\\(|\uff5c\u4e28\u2223\u2503\\-\u2010\u2013\u2014\u2212\uff0d\ufe63])0[*\u00d7\u2715\u2716\u2a2f\u2a09x\u500d])|(?:(?<=[ \\[\\(|\uff5c\u4e28\u2223\u2503\\-\u2010\u2013\u2014\u2212\uff0d\ufe63])[*\u00d7\u2715\u2716\u2a2f\u2a09x]0(?=[ \\)\\]]|\u500d|$))|^(?!.*(?:\u5ba2\u6237\u7aef|\u8f6f\u4ef6)).*\u4e0b\u8f7d|\u4f4e\u500d|\u514d\u8d39|(?<![A-Za-z])free(?![A-Za-z])", re.I)),
+    ("高倍率节点", _ICON_BASE + "Airport.svg", re.compile("(?<=[ \\[\\(|\uff5c\u4e28\u2223\u2503\\-\u2010\u2013\u2014\u2212\uff0d\ufe63])((?:[*\u00d7\u2715\u2716\u2a2f\u2a09x]\\s*(?:[2-9]\\d*|[1-9]\\d+)(?:\\.\\d+)?)|(?:(?<![\\d.])(?:[2-9]\\d*|[1-9]\\d+)(?:\\.\\d+)?\\s*(?:\u500d|[*\u00d7\u2715\u2716\u2a2f\u2a09x])))", re.I)),
+    ("家宽节点", _ICON_BASE + "Server.svg", re.compile("\u5bb6\u5bbd|\u4f4f\u5b85|\u539f\u751f\\s*IP|\u5bb6\u5ead\u5bbd\u5e26|\\bISP\\b|\\bRES\\b|residential", re.I)),
+]
+AUTO_ICON = _ICON_BASE + "Auto.svg"
+OTHER_ICON = _ICON_BASE + "WorldMap.svg"
+
+
+def _matched_regions(name):
+    """The script's getMatchedRegions: longest geo match(es) win;
+    rate / home matches are independent. Returns (geo_idx, extra_idx)
+    into REGION_DEFS / EXTRA_DEFS."""
+    text = _fold_trad(name)
+    best = -1
+    hits = []
+    for i, (_rn, cre) in enumerate(REGION_RES):
+        m = cre.search(text)
+        if m:
+            hits.append((i, len(m.group(0))))
+            if len(m.group(0)) > best:
+                best = len(m.group(0))
+    geo = [i for i, ln in hits if ln == best]
+    extras = [i for i, (_n, _ic, cre) in enumerate(EXTRA_DEFS)
+              if cre.search(text)]
+    return geo, extras
 
 
 def _region_plan(names):
+    """Ordered region pairs: geographic pairs in definition order,
+    then rate / home pairs, then the catch-all 其他节点 pair."""
+    buckets = {}
     matched = set()
-    regions = []
-    for rname, rx in REGION_RES:
-        members = [n for n in names
-                   if not STRONG_INFO.search(n) and rx.search(n)]
-        if members:
-            regions.append((rname, members))
-            matched.update(members)
+    for n in names:
+        if STRONG_INFO.search(n):
+            continue
+        geo, extras = _matched_regions(n)
+        for i in geo:
+            buckets.setdefault(("g", i), []).append(n)
+        for i in extras:
+            buckets.setdefault(("x", i), []).append(n)
+        if geo:
+            matched.add(n)
+    pairs = []
+    for i, (rname, _f, _s) in enumerate(REGION_DEFS):
+        if ("g", i) in buckets:
+            pairs.append((rname, "", buckets[("g", i)]))
+    for i, (xname, icon, _c) in enumerate(EXTRA_DEFS):
+        if ("x", i) in buckets:
+            pairs.append((xname, icon, buckets[("x", i)]))
     other = [n for n in names
              if n not in matched and not STRONG_INFO.search(n)]
-    return regions, other
+    if other:
+        pairs.append(("其他节点", OTHER_ICON, other))
+    select_names = [q[0] for q in pairs]
+    pair_names = []
+    for q in pairs:
+        pair_names += [q[0] + "-自动选择", q[0]]
+    return {"pairs": pairs, "select_names": select_names,
+            "pair_names": pair_names}
+
+
+def _keep_plain_node(name):
+    if STRONG_INFO.search(name):
+        return False
+    if _matched_regions(name)[0]:
+        return True
+    return not EXCLUDE_FILTER.search(name)
+
+
+_INVISIBLE_CHARS = re.compile(
+    "[\u00AD\u180E\u200B\u200E\u200F\u202A-\u202E\u2060-\u206F"
+    "\uFEFF\u115F\u1160\u3164\uFFA0]")
+_FLAG_RE = re.compile("[\U0001F1E6-\U0001F1FF]{2}")
+
+
+def _normalize_plain_name(name):
+    clean = _INVISIBLE_CHARS.sub("", str(name))
+    m = _FLAG_RE.search(clean)
+    flag = m.group(0) if m else None
+    rest = clean.replace(flag, "", 1) if flag else clean
+    rest = re.sub(r"\s+", " ", rest).strip()
+    geo, _x = _matched_regions(clean)
+    region_flag = flag or (REGION_DEFS[geo[0]][1] if geo else None)
+    return (region_flag + " " + rest) if region_flag else rest
+
+
+RESERVED_NAMES = {
+    "默认代理", "GLOBAL", "手动选择", "自动选择", "负载均衡", "故障转移",
+    "直连", "漏网之鱼", "远控工具", "AdBlock", "FCM", "YouTube",
+    "Google", "Claude", "ClaudeAI", "GitHub", "AI", "Microsoft",
+    "Apple", "Telegram", "Steam", "TikTok", "Twitter", "Meta",
+    "Line", "Netflix", "Emby", "PikPak", "Spotify", "Crypto",
+    "EHentai", "链式中转", "其他节点", "其他节点-自动选择",
+    "REJECT", "REJECT-DROP", "PASS", "DIRECT",
+    "🇨🇳 直连 | 双栈", "🇨🇳 直连 | IPv4优先", "🇨🇳 直连 | IPv6优先",
+    "🇨🇳 直连 | 仅IPv4", "🇨🇳 直连 | 仅IPv6",
+}
+RESERVED_NAMES.update(n for n, _f, _s in REGION_DEFS)
+RESERVED_NAMES.update(n + "-自动选择" for n, _f, _s in REGION_DEFS)
+RESERVED_NAMES.update(n for n, _i, _c in EXTRA_DEFS)
+RESERVED_NAMES.update(n + "-自动选择" for n, _i, _c in EXTRA_DEFS)
+
+
+def _prepare_plain_nodes(nodes):
+    """The script's filterAndNormalizeProxies, mirrored: drop
+    built-in / info nodes, normalize names, guard reserved names,
+    dedupe keeping the first. Returns (kept, rename_map)."""
+    kept = []
+    rename_map = {}
+    used = set()
+    for node in nodes:
+        raw = str(node.get("name") or "")
+        if str(node.get("type") or "").lower() in ("direct", "reject"):
+            continue
+        if not _keep_plain_node(raw):
+            continue
+        nn = _normalize_plain_name(raw)
+        if nn in RESERVED_NAMES:
+            cand = "节点-" + nn
+            i = 2
+            while cand in used or cand in RESERVED_NAMES:
+                cand = "节点-" + nn + "-" + str(i)
+                i += 1
+            nn = cand
+        if raw not in rename_map:
+            rename_map[raw] = nn
+        if nn in used:
+            continue
+        used.add(nn)
+        kept.append(node if nn == raw else {**node, "name": nn})
+    return kept, rename_map
 
 
 def build_config(target, items):
     nodes = gather(items)
     if not nodes:
         raise ValueError("没有可用节点")
+    plain_nodes, rename_map = _prepare_plain_nodes(nodes)
+    if not plain_nodes:
+        raise ValueError("没有可用节点")
     if target == "singbox":
-        cfg = copy.deepcopy(SB_SKEL)
-        emitted = [sb_emit(n) for n in nodes]
+        cfg = _skeleton("skeleton_singbox.json")
+        emitted = []
+        for n in plain_nodes:
+            o = sb_emit(n)
+            o.pop("detour", None)
+            emitted.append(o)
         tags = [o["tag"] for o in emitted]
-        out = [o for o in cfg["outbounds"] if o.get("type") in BUILTIN_TYPES]
-        out += emitted
+        out = []
         for o in cfg["outbounds"]:
-            if o.get("type") in GROUP_TYPES:
-                g = dict(o)
-                members = []
-                for m in g.get("outbounds", []):
-                    members += tags if m == SENTINEL else [m]
-                g["outbounds"] = members
-                out.append(g)
-        # HiClash-style region groups (see _region_plan): pairs of
-        # urltest "<名>-自动选择" + selector "<名>", placed after
-        # 自动选择; region selectors lead 节点选择 and join GLOBAL.
-        regions, other = _region_plan(tags)
+            if o.get("type") == "@nodes@":
+                out.extend(emitted)
+                continue
+            if "outbounds" in o:
+                o["outbounds"] = _fill_members(o.get("outbounds"),
+                                               [], tags)
+            out.append(o)
+        # Plain mode has no chain tiers (the script design has
+        # none): drop both tier outbounds, strip references, and
+        # repair selector defaults that pointed at a tier.
+        out = [o for o in out
+               if o.get("tag") not in (ENTRY_AUTO, EXIT_AUTO)]
+        for g in out:
+            if isinstance(g.get("outbounds"), list):
+                g["outbounds"] = [
+                    m for m in g["outbounds"]
+                    if m not in (ENTRY_AUTO, EXIT_AUTO)]
+            if (g.get("default") in (ENTRY_AUTO, EXIT_AUTO)
+                    and g.get("outbounds")):
+                g["default"] = g["outbounds"][0]
+        plan = _region_plan(tags)
         pairs = []
-        select_tags = []
-        def _sb_pair(rname, members):
-            auto = rname + "-自动选择"
+        for pname, _icon, members in plan["pairs"]:
+            auto = pname + "-自动选择"
             pairs.append({"type": "urltest", "tag": auto,
                           "outbounds": list(members),
                           "url": "http://www.gstatic.com/generate_204",
-                          "interval": "5m"})
-            pairs.append({"type": "selector", "tag": rname,
-                          "outbounds": [auto] + list(members)})
-            select_tags.append(rname)
-        for rname, members in regions:
-            _sb_pair(rname, members)
-        if other:
-            _sb_pair("其他节点", other)
+                          "interval": "1m", "tolerance": 100,
+                          "interrupt_exist_connections": False})
+            pairs.append({"type": "selector", "tag": pname,
+                          "outbounds": [auto] + list(members),
+                          "interrupt_exist_connections": False})
         if pairs:
-            at = next((i for i, o in enumerate(out)
-                       if o.get("tag") == "♻️ 自动选择"), len(out) - 1)
-            out[at + 1:at + 1] = pairs
-            for o in out:
-                if o.get("tag") == "🔰 节点选择":
-                    o["outbounds"] = select_tags + o.get("outbounds", [])
-                elif o.get("tag") == "GLOBAL":
-                    o["outbounds"] = o.get("outbounds", []) + [
-                        t for t in select_tags
-                        if t not in o.get("outbounds", [])]
+            out.extend(pairs)
+            no_append = {"GLOBAL", "默认代理", "手动选择", "自动选择",
+                         "AdBlock", "远控工具", "直连"}
+            for g in out:
+                if not isinstance(g.get("outbounds"), list):
+                    continue
+                if g.get("tag") == "默认代理":
+                    g["outbounds"] = (plan["select_names"]
+                                      + g["outbounds"])
+                elif g.get("tag") == "GLOBAL":
+                    g["outbounds"] = g["outbounds"] + [
+                        t for t in plan["pair_names"]
+                        if t not in g["outbounds"]]
+                elif (g.get("tag") not in no_append
+                      and g.get("tag") not in plan["pair_names"]
+                      and g.get("type") == "selector"):
+                    g["outbounds"] = g["outbounds"] + [
+                        t for t in plan["select_names"]
+                        if t not in g["outbounds"]]
+                if (g.get("default")
+                        and g["default"] not in g["outbounds"]):
+                    g["default"] = g["outbounds"][0]
         cfg["outbounds"] = out
         return (json.dumps(cfg, ensure_ascii=False, indent=2),
                 "application/json; charset=utf-8")
     import yaml
-    cfg = copy.deepcopy(CL_SKEL)
-    proxies = [clash_emit(n) for n in nodes]
-    names = [str(p.get("name")) for p in proxies]
+    proxies = []
+    for n in plain_nodes:
+        pr = clash_emit(n)
+        dp = pr.get("dialer-proxy")
+        if dp and dp in rename_map:
+            pr["dialer-proxy"] = rename_map[dp]
+        proxies.append(pr)
+    names = [str(pr.get("name")) for pr in proxies]
+    cfg = _skeleton("skeleton_clash.json")
+    specials = [x for x in cfg.get("proxies") or [] if x != "@NODES@"]
+    cfg["proxies"] = proxies + specials
     groups = []
     for g in cfg.get("proxy-groups") or []:
-        g = dict(g)
-        members = []
-        for m in g.get("proxies") or []:
-            members += names if m == SENTINEL else [m]
-        g["proxies"] = members
+        if g.get("name") in (ENTRY_AUTO, EXIT_AUTO):
+            continue
+        g["proxies"] = _fill_members(g.get("proxies"), [], names)
+        if isinstance(g.get("proxies"), list):
+            g["proxies"] = [
+                m for m in g["proxies"]
+                if m not in (ENTRY_AUTO, EXIT_AUTO)]
         groups.append(g)
-    # HiClash-style region groups (see _region_plan).
-    regions, other = _region_plan(names)
-    pairs = []
-    select_names = []
-    def _cl_pair(rname, members):
-        auto = rname + "-自动选择"
-        pairs.append({"name": auto, "type": "url-test",
-                      "url": "http://www.gstatic.com/generate_204",
-                      "interval": 300, "hidden": True,
-                      "proxies": list(members)})
-        pairs.append({"name": rname, "type": "select",
-                      "proxies": [auto] + list(members)})
-        select_names.append(rname)
-    for rname, members in regions:
-        _cl_pair(rname, members)
-    if other:
-        _cl_pair("其他节点", other)
-    if pairs:
-        at = next((i for i, g in enumerate(groups)
-                   if g.get("name") == "♻️ 自动选择"), len(groups) - 1)
-        groups[at + 1:at + 1] = pairs
+    plan = _region_plan(names)
+    region_groups = []
+    for pname, icon, members in plan["pairs"]:
+        auto = pname + "-自动选择"
+        region_groups.append({
+            "name": auto, "type": "url-test", "interval": 600,
+            "timeout": 3000,
+            "url": "https://www.apple.com/library/test/success.html",
+            "lazy": True, "max-failed-times": 3,
+            "empty-fallback": "REJECT", "tolerance": 50,
+            "exclude-type": "DIRECT", "icon": AUTO_ICON,
+            "hidden": True, "proxies": list(members)})
+        sel = {
+            "name": pname, "type": "select", "interval": 600,
+            "timeout": 3000,
+            "url": "https://www.apple.com/library/test/success.html",
+            "lazy": True, "max-failed-times": 3,
+            "empty-fallback": "REJECT",
+            "proxies": [auto] + list(members)}
+        if icon:
+            sel["icon"] = icon
+        region_groups.append(sel)
+    if region_groups:
+        groups.extend(region_groups)
+        no_append = {"GLOBAL", "默认代理", "手动选择", "自动选择",
+                     "负载均衡", "故障转移", "直连", "AdBlock", "远控工具"}
         for g in groups:
-            if g.get("name") == "🔰 节点选择":
-                g["proxies"] = select_names + g.get("proxies", [])
-    cfg["proxies"] = proxies
+            if not isinstance(g.get("proxies"), list):
+                continue
+            if g.get("name") == "默认代理":
+                g["proxies"] = plan["select_names"] + g["proxies"]
+            elif g.get("name") == "GLOBAL":
+                g["proxies"] = g["proxies"] + [
+                    t for t in plan["pair_names"]
+                    if t not in g["proxies"]]
+            elif (g.get("name") not in no_append
+                  and g.get("name") not in plan["pair_names"]):
+                g["proxies"] = g["proxies"] + [
+                    t for t in plan["select_names"]
+                    if t not in g["proxies"]]
     cfg["proxy-groups"] = groups
     return (yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False),
             "text/yaml; charset=utf-8")
