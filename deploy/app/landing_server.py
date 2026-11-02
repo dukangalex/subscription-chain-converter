@@ -2135,6 +2135,15 @@ def merge_clash(entry_items, exit_items):
     if not isinstance(ey, dict) or not isinstance(xy, dict):
         raise ValueError("转换失败")
     eprox, xprox = ey.get("proxies") or [], xy.get("proxies") or []
+    # Chain pools never contain built-in endpoints: a converted
+    # config's direct / reject entries are configuration artifacts,
+    # not nodes — as exits they would break the two-hop lock (an
+    # exit picked as DIRECT leaves the chain at the entry side),
+    # and as entries they silently degrade the chain to one hop.
+    eprox = [p for p in eprox
+             if str(p.get("type") or "").lower() not in ("direct", "reject")]
+    xprox = [p for p in xprox
+             if str(p.get("type") or "").lower() not in ("direct", "reject")]
     if not eprox or not xprox:
         raise ValueError("入口或出口没有可用节点")
     built = _own_clash_chain(eprox, xprox)
