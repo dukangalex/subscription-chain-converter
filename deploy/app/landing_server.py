@@ -547,7 +547,7 @@ def build_config(target, items):
                           "url": "http://www.gstatic.com/generate_204",
                           "interval": "5m"})
             pairs.append({"type": "selector", "tag": rname,
-                          "outbounds": list(members) + [auto]})
+                          "outbounds": [auto] + list(members)})
             select_tags.append(rname)
         for rname, members in regions:
             _sb_pair(rname, members)
@@ -590,7 +590,7 @@ def build_config(target, items):
                       "interval": 300, "hidden": True,
                       "proxies": list(members)})
         pairs.append({"name": rname, "type": "select",
-                      "proxies": list(members) + [auto]})
+                      "proxies": [auto] + list(members)})
         select_names.append(rname)
     for rname, members in regions:
         _cl_pair(rname, members)
