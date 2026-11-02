@@ -2342,7 +2342,11 @@ textarea{resize:vertical;font-family:inherit}
 button.go{margin-top:18px;width:100%;padding:12px;border:0;border-radius:8px;background:#0a84ff;color:#fff;font-size:16px}
 .out{margin-top:18px;word-break:break-all;background:#1c1c1e;border:1px solid #333;border-radius:8px;padding:12px;display:none}
 .row{display:flex;gap:10px;margin-top:10px}
-.row button{flex:1;padding:10px;border:0;border-radius:8px;background:#333;color:#eee}
+.row button{flex:1;padding:10px;border:0;border-radius:8px;background:#333;color:#eee;transition:transform .08s,filter .08s,background .15s}
+.row button:active{transform:scale(.97);filter:brightness(1.3)}
+.row button.done{background:#248a3d;color:#fff}
+button.go:active{transform:scale(.99);filter:brightness(1.15)}
+button.go:disabled{opacity:.55}
 .hide{display:none}
 </style>
 </head>
@@ -2368,9 +2372,9 @@ button.go{margin-top:18px;width:100%;padding:12px;border:0;border-radius:8px;bac
 </select>
 <label>自定义后缀（可选，不填则随机）</label>
 <input id="codeN" placeholder="如 home，只用字母、数字、-、_">
-<button class="go" onclick="genN()">生成转换链接</button>
+<button class="go" id="goN" onclick="genN()">生成转换链接</button>
 <div class="out" id="outN"><div id="linkN"></div>
-<div class="row"><button onclick="openL('N')">打开链接</button><button onclick="copyL('N')">复制链接</button></div></div>
+<div class="row"><button onclick="openL(this,'N')">打开链接</button><button onclick="copyL(this,'N')">复制链接</button></div></div>
 </div>
 
 <div id="secC" class="hide">
@@ -2385,9 +2389,9 @@ button.go{margin-top:18px;width:100%;padding:12px;border:0;border-radius:8px;bac
 </select>
 <label>自定义后缀（可选，不填则随机）</label>
 <input id="codeC" placeholder="如 chain，只用字母、数字、-、_">
-<button class="go" onclick="genC()">生成链式订阅链接</button>
+<button class="go" id="goC" onclick="genC()">生成链式订阅链接</button>
 <div class="out" id="outC"><div id="linkC"></div>
-<div class="row"><button onclick="openL('C')">打开链接</button><button onclick="copyL('C')">复制链接</button></div></div>
+<div class="row"><button onclick="openL(this,'C')">打开链接</button><button onclick="copyL(this,'C')">复制链接</button></div></div>
 <p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ 是 Mihomo、/s/ 是 sing-box，同一个码改字母就能切换格式，不用重新生成。</p>
 </div>
 
@@ -2413,12 +2417,15 @@ function shorten(body,cb){
     .then(function(r){return r.text().then(function(t){cb(r.ok?t:null,r.ok?null:t)})})
     .catch(function(){cb(null,null)});
 }
+function busy(id,on,txt){var b=document.getElementById(id);if(!b)return;b.disabled=on;b.textContent=on?"生成中…":txt}
 function genN(){
   var it=items("u"); if(!it.length){alert("先粘贴节点或订阅链接");return}
   var tg=document.getElementById("t").value;
   var cd=document.getElementById("codeN").value.trim();
   var body={target:tg,url:it.join("|")}; if(cd)body.code=cd;
+  busy("goN",true);
   shorten(body,function(u,err){
+    busy("goN",false,"生成转换链接");
     if(!u){
       if(cd){alert(err||"生成失败");return}
       var base=(tg=="clash"||tg=="singbox")?"/conv":"/sub";u=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"));
@@ -2432,7 +2439,9 @@ function genC(){
   var tg=document.getElementById("tc").value;
   var cd=document.getElementById("codeC").value.trim();
   var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd;
+  busy("goC",true);
   shorten(body,function(u,err){
+    busy("goC",false,"生成链式订阅链接");
     if(!u){
       if(cd){alert(err||"生成失败");return}
       u=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"));
@@ -2440,8 +2449,31 @@ function genC(){
     cur.C=u;show("C");
   });
 }
-function openL(k){if(cur[k])location.href=cur[k]}
-function copyL(k){if(cur[k])navigator.clipboard.writeText(cur[k])}
+function flash(btn,txt){
+  if(btn._ft)return;
+  var o=btn.textContent;btn.textContent=txt;btn.classList.add("done");
+  btn._ft=setTimeout(function(){btn.textContent=o;btn.classList.remove("done");btn._ft=null},1400);
+}
+function openL(btn,k){
+  if(!cur[k])return;
+  flash(btn,"正在打开…");
+  setTimeout(function(){location.href=cur[k]},200);
+}
+function copyL(btn,k){
+  if(!cur[k])return;
+  function ok(){flash(btn,"已复制 ✓")}
+  function fail(){flash(btn,"复制失败，请长按链接复制")}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(cur[k]).then(ok).catch(function(){fallback()});
+  }else{fallback()}
+  function fallback(){
+    var ta=document.createElement("textarea");
+    ta.value=cur[k];ta.style.position="fixed";ta.style.opacity="0";
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy")?ok():fail()}catch(e){fail()}
+    document.body.removeChild(ta);
+  }
+}
 </script>
 </body>
 </html>
