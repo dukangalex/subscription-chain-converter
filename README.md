@@ -1,6 +1,8 @@
 # Self-Hosted Subscription Converter with Chain Proxy — Implementation Spec
 
-> **Abstract (EN):** A fully self-hosted subscription conversion backend for
+[中文说明](#chinese-edition) · [English](#self-hosted-subscription-converter-with-chain-proxy--implementation-spec)
+
+> **Abstract:** A fully self-hosted subscription conversion backend for
 > Mihomo (Clash) and sing-box clients. It ingests node lists and subscription
 > URLs in four source formats, generates chained-proxy configurations
 > (entry hop → exit hop), serves them through opaque short links, and mirrors
@@ -10,6 +12,531 @@
 > mapping file, never embedded in generated links, never written to logs.
 > This document is an implementation-ready specification: architecture,
 > algorithms, parameters, deployment, verification and operations.
+
+> **Implementations:** This repository contains the VPS implementation
+> (`deploy/`). The Cloudflare Workers edition is a separate repository,
+> [subscription-chain-converter-cf](https://github.com/dukangalex/subscription-chain-converter-cf):
+> the conversion core matches this specification, and its deployment and page
+> form follow the shape of sublink-worker (the Worker project at the repo
+> root, a one-click deploy button, and a quick-start guide).
+
+All domains, ports and paths in this document are examples
+(`sub.example.com` and the like); replace them with your own when deploying.
+
+## 1. Goals and design principles
+
+1. **Self-hosted, data stays home:** conversion runs on your own server.
+   Original subscription addresses (including tokens) are kept only on the
+   server, and never pass through any third-party conversion service.
+2. **Chain proxy is a first-class citizen:** entry-hop × exit-hop combined
+   subscriptions are as important as plain conversion, and the generated
+   configurations work out of the box.
+3. **Official rule sources only, maintained in-house:** rule files come only
+   from the official repositories (MetaCubeX for Mihomo, SagerNet for
+   sing-box), are mirrored on this host and refreshed on a schedule; the
+   organization of rules (proxy groups, rule order, DNS baseline) is
+   maintained by this backend's own skeleton, and never depends on any
+   third-party override script.
+4. **If it is valid, it must work:** as long as the input subscription or
+   node is valid, the generated configuration must actually start in the
+   kernel and carry real traffic; passing a static check alone does not
+   count (see §9, the verification manual).
+5. **Privacy by default, turned all the way up:** logs record no links or
+   content; the mapping file is mode 0600; credentials never enter the
+   code repository.
+
+## 2. Overall architecture
+
+```
+Client (Mihomo / sing-box app)
+        │  HTTPS fetch of short link / rule files
+        ▼
+Public entry (your own domain's CDN tunnel or reverse proxy, split by path)
+        ├── /            → page service (static page)
+        ├── /chain /conv /sub /version → page service
+        ├── /c/<code> /m/<code> /s/<code>    → page service (generate after short-link resolution)
+        ├── /shorten     → page service (POST, create short link)
+        ├── /rules/...   → page service (rule mirror delivery)
+        └── other paths  → subscription distribution / other self-hosted services (optional)
+        ▼
+Page service (subpage, single-file Python, loopback only)
+        ├── generation: ingest engine → plain conversion / chain builder (own skeleton)
+        ├── short-link storage links.json (0600)
+        └── rule mirror rules_files/ (refreshed on schedule by refresh_rules.py)
+        ▼
+Conversion engine (subconverter, local loopback port)
+        └── converts any source format into the target intermediate format
+```
+
+Components:
+
+| Component | Form | Responsibility |
+|---|---|---|
+| Page service | Single-file Python (standard-library http.server) | Static page, generation entry, short links, rule delivery |
+| Conversion engine | subconverter binary (deployed locally) | Source format → intermediate-format node conversion |
+| Skeleton files | skeleton_clash.json / skeleton_singbox.json | Own finalized proxy groups, rules, DNS and sniffing |
+| Rule manifest | rules_manifest.json | Mapping from official source URLs to local mirror paths |
+| Refresh script | refresh_rules.py + systemd timer | Scheduled fetch of official rules, validation, atomic replacement |
+| Short-link storage | links.json | Short code → original parameter mapping (0600) |
+
+## 3. Ingest engine (source-format normalization)
+
+Before generation, every item the user supplies (a node link or a
+subscription URL) is normalized into a node list:
+
+- Four source types are supported: share links (URIs, one per line), Clash
+  YAML, base64-encoded URI lists, and sing-box JSON. Mixed input is
+  recognized item by item.
+- When fetching a subscription, user-agent fallback runs in order: client
+  UA → sing-box UA → browser UA, until parseable content is obtained
+  (different providers return different formats for different UAs).
+- Conversion must preserve faithfully: newer protocols such as anytls,
+  ECH-related fields (`ech-opts` / `tls.ech`), Reality, and uTLS
+  fingerprints must not be silently dropped.
+- Node-level conversion reuses the conversion engine: entry and exit are
+  first converted separately into the target intermediate format (Clash via
+  YAML, sing-box via JSON), then assembled by the chain builder.
+
+## 4. Plain conversion
+
+- Interface: `GET /conv?target=clash|singbox&url=<urlencoded source list, | separated>`
+  generated by the in-house pipeline; other target formats
+  (v2ray/surge/loon/quanx) go through `GET /sub?...` proxied to the
+  conversion engine.
+- Only the short-link form is recommended externally (see §7); long links
+  are kept only as an internal fallback for compatibility.
+
+## 5. Chain builder (core algorithm)
+
+Input: entry node list E and exit node list X (already converted to the
+target intermediate format). Output: one complete client configuration.
+The steps are isomorphic for both targets:
+
+1. **Naming:** entry node names get the prefix `入口-`, exit nodes get
+   `出口-`. On the Clash side, if the original name starts with a flag
+   emoji, the prefix is inserted after the flag as the second word
+   (e.g. `🇺🇸 出口- 美国 1.2.3.4:443`); the sing-box side uses a plain
+   prefix.
+2. **Chaining:** each exit node is set to take its second hop through the
+   entry group: Clash uses `dialer-proxy: ⛓ 入口优选`, sing-box uses
+   `detour: ⛓ 入口优选`.
+3. **Groups (finalized proxy groups, same names and structure for both
+   targets):**
+   - `⛓ 入口优选` (urltest): entry nodes only.
+   - `⛓ 出口优选` (urltest): exit nodes only, placed first in the main
+     selector.
+   - `默认代理` (select): [出口优选, 入口优选, 手动选择, 自动选择,
+     负载均衡, 故障转移] (Clash); the sing-box side uses the first four.
+   - `手动选择` (select): all nodes (entry first, exit after).
+   - `自动选择` / `负载均衡` / `故障转移`: exit nodes only.
+   - Application groups (FCM, YouTube, Google, Claude, AI, Microsoft,
+     Apple, Telegram, Steam, TikTok, Twitter, Meta, Line, Netflix, Emby,
+     PikPak, Spotify, Crypto, EHentai, remote-control tools, AdBlock,
+     漏网之鱼, 直连, and others): members are finalized group-to-group
+     references (e.g. [默认代理, 手动选择, 自动选择, 负载均衡,
+     故障转移, 出口优选]), never nodes directly.
+   - **Entry isolation rule:** entry nodes may appear only in
+     `⛓ 入口优选` and `手动选择`; no automatic group may select an
+     entry directly (otherwise the single-hop direct-exit semantics would
+     be bypassed, and speed tests could pick an unchained path).
+   - **Region-group handling:** if every reachable leaf of a region-aggregated
+     group is an exit node, the group is deleted as a whole, and its
+     references and rule targets are repointed to `⛓ 出口优选` (under
+     chain semantics, "region" is decided by the exit, so a standalone
+     region group is pure duplication); if a group is emptied this way, its
+     references are repointed to the main selector.
+4. **Automatic-group parameters (finalized 2026-10-29, revised 2026-11-01):**
+   only the speed at which dead nodes are discovered is tightened — the
+   test interval is 30 seconds (Clash `interval: 30`, sing-box `"30s"`),
+   Clash additionally sets `lazy: false` (continuous background testing)
+   and `max-failed-times: 3` (forced re-check after consecutive failures);
+   switch tolerance stays at 100 ms and per-node timeout stays at 5000 ms —
+   two-hop link test jitter is large, and too tight a tolerance makes
+   automatic groups flap frequently between similar nodes (evidenced by
+   AngelaMihomo client logs the same day, which set the same lower bound
+   for imported configurations at runtime); established connections are not
+   interrupted (`interrupt_exist_connections: false`). The old 3-minute
+   interval left a dead node lingering for minutes, with a selected node
+   already timing out but never switched away (measured 2026-10-29), hence
+   only the interval and lazy were changed. 2026-11-01 re-measurement
+   revision: in loopback two-hop tests, recovery of a falsely-dead node
+   (process alive but not returning data) was dominated by probe-cycle
+   phase (55 seconds measured at a 60-second interval), and adjusting
+   failure-trigger parameters (probe timeout, max-failed-times) measured
+   ineffective, so the interval was tightened again from 60 to 30 seconds;
+   tolerance and timeout are unchanged to preserve anti-flap behavior.
+5. **DNS baseline:**
+   - Bootstrap resolution (node hostnames) uses DoH/443 only (e.g.
+     `https://223.5.5.5/dns-query#DIRECT`). **DoT/853 bootstrap is
+     disabled:** measured carrier interference on TCP 853 once caused
+     hundreds of cancelled dials overnight and dragged chain connection
+     establishment to a halt.
+   - Overseas domain resolution goes through the chain (nameserver tagged
+     with the main selector); domestic domains use domestic DoH; fake-ip
+     mode is on with a filter list (STUN-like traffic follows rule sets).
+   - sing-box side DNS servers: fakeip, dns-cn (UDP direct to domestic
+     resolvers), dns-remote (via the main selector); the ECH-dedicated
+     server is in §5.2.
+6. **Anti-leak package (both targets):**
+   - WebRTC: STUN/TURN domain keywords and ports (3478/19302/5349)
+     rejected.
+   - LAN addresses and `.lan/.local/.home.arpa` go direct; public DNS
+     domains and IP ranges go direct (to avoid resolution loops); plaintext
+     outbound DNS on port 53 is rejected.
+   - sing-box side: DNS returns reject for the ad rule set, and the routing
+     layer blocks in sync.
+
+### 5.1 Clash skeleton notes
+
+- Top level: dns (fake-ip, nameserver-policy split by geosite), hosts,
+  sniffer, tun, profile, geox-url (pointing at the in-house mirror, see
+  §6 on the rule mirror; geo auto-update interval 7 days).
+- rule-providers are all official `.mrs` (MetaCubeX meta-rules-dat),
+  `interval: 86400`, URLs pointing at the in-house mirror
+  `/rules/clash/<file>`.
+- The direct group is built from 5 built-in direct proxies (dual-stack /
+  IPv4-first / IPv6-first / IPv4-only / IPv6-only).
+- Groups carry no icon field (icons are pure decoration with no functional
+  dependency; the skeleton does not configure them by default).
+
+### 5.2 sing-box skeleton notes
+
+- Top level: outbounds (chain dual groups + nodes + direct variants +
+  REJECT placeholder + all selector/urltest groups), dns, route
+  (final = 漏网之鱼), http_clients, inbounds (tun), log.
+- rule_set are all official `.srs` (SagerNet sing-geosite / sing-geoip),
+  `http_client` pointing at a direct client with `connect_timeout`,
+  URLs pointing at the in-house mirror `/rules/singbox/<file>`.
+- **Node normalization** (applied to every leaf node at assembly time,
+  aligned with the existing behavior of community override scripts):
+  - `domain_resolver` is always repointed to the domestic DNS label inside
+    the skeleton (e.g. `dns-cn`); the legacy `domain_strategy` is folded
+    into `domain_resolver.strategy` and then deleted.
+  - Non-endpoint nodes are injected with `tcp_keep_alive: "60s"`,
+    and `tcp_keep_alive_interval` is filled in as `"60s"` when missing.
+  - A redundant `name` field inconsistent with the tag is deleted; the
+    entry/exit detour is assigned uniformly by the builder (clear first,
+    then set).
+- **ECH self-consistency (the key pitfall; a complete sing-box
+  configuration must carry it itself):** airport entry nodes often carry
+  ECH, and their configuration list must be fetched at dial time with a
+  DNS HTTPS-type query; but the anti-leak DNS rules reject HTTPS/SVCB
+  queries wholesale, and the collision makes every connection through the
+  exit report `fetch ECH config list: REFUSED` and the whole chain
+  unusable. Some clients only repair ECH routing for self-assembled
+  configurations and explicitly do not intervene for complete sing-box
+  files, so the generating side must carry the fix itself, in three parts:
+  1. **Embed at generation time:** on the server side, fetch the live
+     ECHConfigList via DoH and write it into each ECH outbound's
+     `tls.ech.config`. Note that sing-box requires PEM armor and the label
+     must be `ECH CONFIGS` (with a space, hard-checked in source); writing
+     `ECHCONFIG` fails startup with `invalid ECH configs pem`.
+     The DNS record's TTL is only about 56 seconds, so relying on the
+     client to fetch live would add a query to almost every batch of new
+     connections; embedding is also a performance optimization.
+  2. **Dedicated query channel as fallback:** add a DNS server `ech-dns`
+     (AliDNS DoH, detoured to a direct outbound with `connect_timeout`),
+     and insert routing rules for ECH query domains (e.g.
+     `cloudflare-ech.com`) at the very front of the DNS rules (they must
+     precede the reject rules). When the embedded copy expires, this
+     keeps it alive.
+  3. **Bare direct outbound trap:** a direct outbound used as a detour
+     target that is "empty" (no fields at all) is rejected by sing-box
+     1.15 with `detour to an empty direct outbound makes no sense` — it
+     must be given a `connect_timeout` (e.g. `"8s"`).
+- **Legacy remote rule-set field trap:** the old template's
+  `"download_detour": "DIRECT"` is rejected by default in sing-box 1.15;
+  use the top-level `http_clients` plus a rule set's `http_client`
+  reference instead.
+
+## 6. Rule mirror and scheduled updates
+
+- **Manifest-driven:** every entry in `rules_manifest.json` carries an
+  official source URL and a local relative path. Sources are official
+  repositories only:
+  - Mihomo: the `meta` branch of
+    `raw.githubusercontent.com/MetaCubeX/meta-rules-dat` (`.mrs` rules)
+    and the `release` branch (geoip.dat, geosite.dat, geoip.metadb,
+    GeoLite2-ASN.mmdb).
+  - sing-box: the `rule-set` branches of
+    `raw.githubusercontent.com/SagerNet/sing-geosite` and
+    `SagerNet/sing-geoip` (`.srs`).
+- **Generated configurations reference only the in-house mirror:**
+  `https://<your domain>/rules/clash/...`,
+  `.../rules/singbox/...`; clients refresh automatically on their own
+  intervals (providers 24h, geox 7d), and the cadence is set by mirror
+  freshness.
+- **Refresh script** (refresh_rules.py): download each item → validate
+  (minimum size, binary files must not be HTML error pages, SVG must
+  contain `<svg`) → write a temp file → `os.replace` atomic replacement;
+  any failure keeps the old file. Results go to `rules_status.json`
+  (time, success count, failure list), and the process exit code reflects
+  failure.
+- **Schedule:** a systemd timer runs once daily in the early morning (see
+  the unit examples in §8), with a randomized delay of a few minutes and
+  catch-up on missed runs (Persistent=true).
+- The mirror directory is not inside the code repository and is maintained
+  exclusively by the refresh script; on first deployment, run it manually
+  once to fill the mirror, then switch the skeleton references over.
+
+## 7. Short links
+
+Long links expose the original subscription (including tokens) in plain
+text in the URL, and are long and leaky. Short-link design:
+
+- Creation: page `POST /shorten`, JSON body
+  `{target, entry, exit}` (chain) or `{target, url}` (plain conversion),
+  with an optional `code` custom suffix. Parameters travel in the request
+  body, not the URL, so they never land in proxy logs.
+- Codes: random codes are 10 characters (the alphabet deliberately drops
+  lookalike characters such as 0/1/i/l/o, about 57^10 entropy space);
+  custom codes are 3–32 characters, allowing letters, digits, `-`, `_`
+  (the full character set — do not restrict user input with the random
+  alphabet).
+- Semantics: generating the same content again (same entry+exit, or same
+  conversion source) reuses the existing code (idempotent); a custom code
+  taken by different content → HTTP 409 prompting a different name; taken
+  by the same content → returned directly.
+- Resolution: `GET /m/<code>` yields a Mihomo configuration,
+  `GET /s/<code>` a sing-box configuration, `GET /c/<code>` the format
+  chosen at creation. **The format is decided by the path letter, not the
+  code** — one code serves one entry+exit pair, and changing the letter
+  switches the client format.
+- Storage: `links.json` sits beside the service, mode 0600, written via
+  temp file + atomic replacement, with an in-process lock against
+  concurrent-write corruption.
+- Page behavior: each of the two forms has an optional "custom suffix"
+  input; generation goes through short links, and if the short-link
+  service is unavailable the frontend automatically falls back to the long
+  form (so the page never dies).
+
+## 8. Deployment manual
+
+Directory layout (example `/opt/subconv/`):
+
+```
+/opt/subconv/
+├── landing_server.py        # page service (generation, short links, rule delivery)
+├── skeleton_clash.json      # own skeleton
+├── skeleton_singbox.json
+├── rules_manifest.json      # rule manifest (76 items scale)
+├── refresh_rules.py         # rule refresh
+├── rules_files/             # mirror (clash/ singbox/ subdirectories)
+├── rules_status.json        # refresh status (generated at runtime)
+├── links.json               # short-link mapping (0600, generated at runtime)
+├── templates/               # conversion-engine templates (fallback path)
+└── subconverter/            # conversion-engine binary (loopback listener)
+```
+
+systemd unit examples:
+
+```ini
+# subpage.service
+[Unit]
+Description=Subscription converter page service
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/subconv/landing_server.py
+WorkingDirectory=/opt/subconv
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+
+# rules-refresh.service
+[Unit]
+Description=Refresh self-hosted rule mirror from official sources
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/subconv/refresh_rules.py
+
+# rules-refresh.timer
+[Unit]
+Description=Daily rule mirror refresh
+
+[Timer]
+OnCalendar=*-*-* 04:35:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Public-entry split (tunnel ingress example; other reverse proxies are
+equivalent rewrites):
+
+```yaml
+ingress:
+  - hostname: sub.example.com
+    path: ^/$
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/chain$
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/conv$
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/sub$
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/version$
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/c/
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/m/
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/s/
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/shorten$
+    service: http://127.0.0.1:<page port>
+  - hostname: sub.example.com
+    path: ^/rules/
+    service: http://127.0.0.1:<page port>
+  - service: http_status:404
+```
+
+Deployment order (verify each step before moving to the next):
+
+1. Deploy the conversion engine and confirm loopback reachability and a
+   successful sample conversion on this host.
+2. Deploy the page service, skeletons and manifest; first run
+   `refresh_rules.py` to fill the mirror, then `curl` any rule file on
+   this host to confirm 200 and a sensible size.
+3. Configure public splitting; first verify `/version` and the home page,
+   then long-link generation (one `/chain` and one `/conv`, one target
+   each).
+4. Verify short links: create → fetch each of the three letters → content
+   format correct.
+5. Enable the timer and trigger the service manually once to confirm the
+   status file updates.
+6. Only then replace the subscription addresses in clients with short
+   links.
+
+## 9. Verification manual (Definition of Done)
+
+**Iron rule: passing static checks ≠ usable.** Pitfalls that `sing-box
+check` cannot catch include an empty direct detour, legacy rule-set
+fields, and rejected ECH queries — all of which only explode at startup or
+runtime. Every class of output must pass all three layers of verification:
+
+1. **Structural comparison:** field-level diff against the previous
+   build's output — group rosters and members, rule lists, DNS, and node
+   fields should show only expected differences (e.g. rule URLs switching
+   to the mirror domain). When changing the builder, run old and new paths
+   on the same input side by side (A/B) to eliminate false differences
+   from subscription-source rotation.
+2. **Kernel validation:** `mihomo -t -f <clash config>` and
+   `sing-box check -c <sing-box config>` must both pass.
+3. **Real kernel run:** actually start the generated sing-box configuration
+   on the server (plus a local mixed inbound pointing at the main
+   selector); requesting `https://www.gstatic.com/generate_204` through the
+   chain should return 204, and requesting a regular site should return
+   200; logs should show rule sets updating successfully from the in-house
+   mirror, with no FATAL. The Clash side can be verified the same way with
+   a real mihomo run or a client import.
+4. **Real-device acceptance:** after a client updates its subscription,
+   both the entry and exit groups should show latency numbers, and real
+   web pages should open normally. On the latency display: the exit
+   group's latency is the full cold-start two-hop handshake time (several
+   times the entry leg's RTT), naturally higher than a single-hop client's
+   connection-pool-reuse test numbers; this is normal — judge by actual
+   browsing feel.
+
+## 10. Operations and troubleshooting
+
+- **Status:** `rules_status.json` shows the latest refresh result; service
+  logs record only the generation path (e.g. `chain target=singbox
+  path=own`), never links.
+- **Rollback:** the builder keeps two fallback levels (script path and
+  built-in merge) that degrade automatically when the skeleton is missing
+  or the build fails, and keeping the previous service file backup enables
+  a quick rollback.
+- **Fault table:**
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| Massive cancelled dials on DoT 853 during subscription fetch | Bootstrap DNS used DoT/853, interfered with by the carrier | Switch bootstrap to DoH/443 (§5) |
+| Chain shows no latency, `ECH ... REFUSED` | Live ECH queries collide with DNS reject rules | Embed ECH at generation + ech-dns fallback (§5.2) |
+| Kernel startup FATAL `empty direct outbound` | Bare direct used as detour | Give direct a connect_timeout (§5.2) |
+| Kernel startup FATAL `invalid ECH configs pem` | PEM label misspelled | Label must be `ECH CONFIGS` (with a space) |
+| Rule sets failing to initialize at scale | Rule-set URL 404 (branch/filename drift) | Fix the manifest against the official repo's rule-set branch and refresh |
+| Client speed test shows exit latency of seconds | Cold-start two-hop handshake measurement characteristic | Normal; judge by real-run feel (§9) |
+| Short link 404 | Code does not exist, or ingress did not allow `/c/`/`/m/`/`/s/` | Check links.json and the entry split table |
+
+## 11. Security and privacy checklist
+
+- Original subscriptions live only in the server's `links.json` (0600);
+  a short code is itself a credential — do not share it publicly. Custom
+  codes are memorable but low-entropy; that trade-off is yours to make.
+- Generation and fetch logs record only path types and results, never
+  URLs, parameters or content.
+- The service listens on loopback only; the only public exposure is the
+  tunnel/reverse-proxy layer; administration goes over SSH.
+- Credentials (tokens, keys) are not written into the code repository or
+  into documents like this one; example values are placeholders throughout.
+- **Duty to inform:** for any change touching user-data flows (where data
+  lives, who it passes through), say so proactively, even when the
+  conclusion is safe — never handle it silently.
+
+## 12. Appendix: interface list
+
+| Method and path | Purpose |
+|---|---|
+| `GET /` | Conversion page |
+| `GET /version` | Engine liveness probe |
+| `GET /conv?target=&url=` | Plain conversion (in-house pipeline, clash/singbox) |
+| `GET /sub?target=&url=` | Plain conversion (proxied to the conversion engine, other formats) |
+| `GET /chain?target=&entry=&exit=` | Chain generation (long link, internal compatibility) |
+| `POST /shorten` | Create short link (JSON body, optional custom code) |
+| `GET /c/<code>` / `/m/<code>` / `/s/<code>` | Short-link fetch (creation format / Mihomo / sing-box) |
+| `GET /rules/<clash\|singbox>/<file>` | Rule mirror delivery (manifest files only) |
+
+## Acknowledgments
+
+This project stands on the following third-party work, and nothing else:
+
+- **Rule data** — the rule files mirrored daily come from the official
+  sources only:
+  [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)
+  for Mihomo, and SagerNet's
+  [sing-geosite](https://github.com/SagerNet/sing-geosite) and
+  [sing-geoip](https://github.com/SagerNet/sing-geoip) for sing-box.
+  The mirror exists so a deployment serves these files from its own
+  storage, unchanged.
+- **Conversion engine** — the node-level conversion reuses
+  [subconverter](https://github.com/tindy2013/subconverter); the install
+  script downloads its official binary, which runs on the loopback port
+  only.
+- **Page service** — single-file Python using only the standard library
+  (`http.server`); zero third-party dependencies.
+- **AliDNS DoH** — queried at generation time to resolve ECH
+  configurations.
+- **Sibling Cloudflare edition's deployment form** — the presentation of
+  the separate subscription-chain-converter-cf repository (the Worker
+  project at the repo root, the one-click deploy button, the quick-start
+  layout) follows the shape popularized by
+  [sublink-worker](https://github.com/7Sageer/sublink-worker).
+
+Everything else — the builders, the chain assembly, the short links, the
+skeleton and its rule organization — is original to this project.
+
+---
+
+<a id="chinese-edition"></a>
+
+# 中文说明
 
 # 自托管订阅转换与链式代理后端 · 落地实施文案
 
@@ -90,7 +617,7 @@
 - 接口：`GET /conv?target=clash|singbox&url=<urlencoded 源列表，| 分隔>`
   由自研管线生成；其他目标格式（v2ray/surge/loon/quanx）走
   `GET /sub?...` 透传给转换引擎。
-- 对外只推荐短链形式（见第 6 章），长链仅作内部兜底保留兼容。
+- 对外只推荐短链形式（见第 7 章），长链仅作内部兜底保留兼容。
 
 ## 5. 链式构建器（核心算法）
 
@@ -414,3 +941,26 @@ ingress:
 | `POST /shorten` | 创建短链（JSON 体，可选自定义码） |
 | `GET /c/<码>` / `/m/<码>` / `/s/<码>` | 短链拉取（按创建格式 / Mihomo / sing-box） |
 | `GET /rules/<clash|singbox>/<文件>` | 规则镜像下发（仅清单内文件） |
+
+## 13. 致谢
+
+本项目立足于以下第三方成果，别无其他：
+
+- **规则数据**——每日镜像的规则文件只取官方源：
+  Mihomo 侧 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)，
+  sing-box 侧 SagerNet 的
+  [sing-geosite](https://github.com/SagerNet/sing-geosite) 与
+  [sing-geoip](https://github.com/SagerNet/sing-geoip)。
+  镜像存在的意义，是让一次部署从自己的存储原样提供这些文件。
+- **转换引擎**——节点级转换复用
+  [subconverter](https://github.com/tindy2013/subconverter)；
+  安装脚本下载其官方二进制，只在回环端口上运行。
+- **页面服务**——单文件 Python，只用标准库（`http.server`），
+  零第三方依赖。
+- **阿里 DNS 的 DoH**——生成时查询它解析 ECH 配置。
+- **姊妹 Cloudflare 版的部署形态**——独立仓库
+  subscription-chain-converter-cf 的呈现方式（仓库根即 Worker 工程、
+  一键部署按钮、快速上手指引）沿用了
+  [sublink-worker](https://github.com/7Sageer/sublink-worker) 带起的形态。
+
+其余一切——构建器、链式组装、短链、骨架及其规则组织——均为本项目自有。
