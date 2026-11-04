@@ -2354,11 +2354,15 @@ button.go:active{transform:scale(.99);filter:brightness(1.15)}
 button.go:disabled{opacity:.55}
 .hide{display:none}
 .askq{font-size:14px;line-height:1.6;color:#eee}
+.updatenote{display:flex;gap:10px;align-items:center;background:#12312b;border:1px solid #1f5c4d;color:#eee;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:14px}
+.updatenote a{color:#7bd88f}
+.updatenote button{margin-left:auto;background:#333;color:#eee;border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>订阅转换</h1>
+<div id="updatenote" style="display:none"></div>
 <div class="tabs">
 <button id="tabN" class="on" onclick="mode('n')">普通转换</button>
 <button id="tabC" onclick="mode('c')">链式代理</button>
@@ -2405,7 +2409,7 @@ button.go:disabled{opacity:.55}
 <p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ 是 Mihomo、/s/ 是 sing-box，同一个码改字母就能切换格式，不用重新生成。</p>
 </div>
 
-<p style="color:#777;font-size:13px">后端运行在你自己的 VPS 上，订阅链接不经过任何第三方。</p>
+<p style="color:#777;font-size:13px">后端运行在你自己的 VPS 上，订阅链接不经过任何第三方。<br>v1.0.0 · 仓库 <a style="color:#7bd88f" href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a style="color:#7bd88f" href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></p>
 </div>
 <script>
 var cur={N:"",C:""};
@@ -2529,6 +2533,39 @@ function copyL(btn,k){
     document.body.removeChild(ta);
   }
 }
+// Update check: compare the version published in the repo's VERSION
+// file with the one built into this page; prompt only when newer.
+// The result is cached for a day; dismissing hides that version.
+(function(){
+  var CURVER="1.0.0";
+  var REPO="https://github.com/dukangalex/subscription-chain-converter";
+  var KEY="conv_update_check";
+  function $(id){return document.getElementById(id)}
+  function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
+  function newer(a,b){var x=ver(a),y=ver(b);for(var k=0;k<3;k++){if((x[k]||0)!==(y[k]||0))return (x[k]||0)>(y[k]||0)}return false}
+  var store=null; try{store=JSON.parse(localStorage.getItem(KEY)||"null")}catch(e){}
+  function save(o){try{localStorage.setItem(KEY,JSON.stringify(o))}catch(e){}}
+  function show(v){
+    if(store&&store.dismissed===v)return;
+    var bar=$("updatenote"); if(!bar)return;
+    bar.innerHTML="";
+    var s=document.createElement("span");s.textContent="有新版本 v"+v+" 可用（当前 v"+CURVER+"）。";bar.appendChild(s);
+    var a=document.createElement("a");a.href=REPO;a.target="_blank";a.rel="noopener";a.textContent="去仓库查看更新";bar.appendChild(a);
+    var x=document.createElement("button");x.textContent="知道了";
+    x.onclick=function(){bar.style.display="none";save({v:v,at:Date.now(),dismissed:v})};
+    bar.appendChild(x);bar.className="updatenote";bar.style.display="flex";
+  }
+  if(store&&store.v&&newer(store.v,CURVER)&&(Date.now()-(store.at||0)<86400000))show(store.v);
+  fetch("https://raw.githubusercontent.com/dukangalex/subscription-chain-converter/main/VERSION")
+    .then(function(r){return r.ok?r.text():null})
+    .then(function(t){
+      if(!t)return;
+      var v=t.trim().split(/\s+/)[0];
+      if(!/^v?\d+\.\d+\.\d+$/.test(v))return;
+      save({v:v,at:Date.now(),dismissed:store?store.dismissed:null});
+      if(newer(v,CURVER))show(v);
+    }).catch(function(){});
+})();
 </script>
 </body>
 </html>
