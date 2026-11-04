@@ -2381,7 +2381,7 @@ button.go:disabled{opacity:.55}
 <button class="go" id="goN" onclick="genN()">生成转换链接</button>
 <div class="out" id="outN"><div id="linkN"></div>
 <div class="row" id="rowN"><button onclick="openL(this,'N')">打开链接</button><button onclick="copyL(this,'N')">复制链接</button></div>
-<div id="askN" class="hide"><div class="askq" id="askqN"></div><div class="row"><button onclick="doOverwrite('N')">覆盖更新</button><button onclick="cancelOverwrite('N')">换个后缀</button></div></div>
+<div id="askN" class="hide"><div class="askq" id="askqN"></div><div class="row"><button onclick="doOverwrite('N')">继续用这个后缀</button><button onclick="cancelOverwrite('N')">换个后缀</button></div></div>
 <div id="noteN" style="color:#7bd88f;font-size:13px;margin-top:8px"></div></div>
 </div>
 
@@ -2400,7 +2400,7 @@ button.go:disabled{opacity:.55}
 <button class="go" id="goC" onclick="genC()">生成链式订阅链接</button>
 <div class="out" id="outC"><div id="linkC"></div>
 <div class="row" id="rowC"><button onclick="openL(this,'C')">打开链接</button><button onclick="copyL(this,'C')">复制链接</button></div>
-<div id="askC" class="hide"><div class="askq" id="askqC"></div><div class="row"><button onclick="doOverwrite('C')">覆盖更新</button><button onclick="cancelOverwrite('C')">换个后缀</button></div></div>
+<div id="askC" class="hide"><div class="askq" id="askqC"></div><div class="row"><button onclick="doOverwrite('C')">继续用这个后缀</button><button onclick="cancelOverwrite('C')">换个后缀</button></div></div>
 <div id="noteC" style="color:#7bd88f;font-size:13px;margin-top:8px"></div></div>
 <p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ 是 Mihomo、/s/ 是 sing-box，同一个码改字母就能切换格式，不用重新生成。</p>
 </div>
@@ -2435,7 +2435,7 @@ function firstHostOf(s){
 }
 function describeOld(cd,rec){
   var head="后缀「"+cd+"」是你之前生成过的一条";
-  var tail="只改内容、不换地址就点「覆盖更新」：会用这次填写的内容替换旧内容，订阅地址保持不变，已经导入的客户端不用改，下次更新就会拿到新内容。";
+  var tail="要继续用这个后缀，就点「继续用这个后缀」：会用这次填写的内容更新它，订阅地址保持不变，已经导入的客户端不用改，下次更新就会拿到新内容。不想用就换个后缀，你之前的链接不受影响。";
   if(!rec) return head+"链接。"+tail;
   var kind=rec.kind=="chain"?"链式代理":"普通转换";
   var bits=[];
@@ -2465,7 +2465,7 @@ function cancelOverwrite(k){
 function showResult(k,u,force){
   document.getElementById("ask"+k).className="hide";
   document.getElementById("row"+k).className="row";
-  document.getElementById("note"+k).textContent=force?"已覆盖更新：订阅地址没有变，客户端下次更新就会拿到新内容。":"";
+  document.getElementById("note"+k).textContent=force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容。":"";
   cur[k]=u;show(k);
 }
 function busy(id,on,txt){var b=document.getElementById(id);if(!b)return;b.disabled=on;b.textContent=on?"生成中…":txt}
