@@ -2287,20 +2287,25 @@ def _valid_code(code):
             and all(ch in _CODE_CHARS for ch in code))
 
 
-def _store_link(record, want_code=None):
+def _store_link(record, want_code=None, force=False):
     """Store a link record and return its code. With want_code, the
     caller-chosen code is used: returns it when free or already bound
-    to the same payload, and None when taken by a different payload.
-    Without want_code, an existing code for the same payload is
-    reused (the target format is NOT part of a link's identity; the
-    /m/ vs /s/ path letter picks it at fetch time), else a random
-    code is generated."""
+    to the same payload, and None when taken by a different payload —
+    unless force is set (the user confirmed the overwrite), in which
+    case the code is rebound to the new payload in place and the
+    subscription address stays the same. Without want_code, an
+    existing code for the same payload is reused (the target format
+    is NOT part of a link's identity; the /m/ vs /s/ path letter
+    picks it at fetch time), else a random code is generated."""
     with _LINKS_LOCK:
         links = _load_links()
         if want_code:
             rec = links.get(want_code)
             if rec is not None:
-                return want_code if _same_payload(rec, record) else None
+                if _same_payload(rec, record):
+                    return want_code
+                if not force:
+                    return None
             links[want_code] = record
             _save_links(links)
             return want_code
@@ -2348,6 +2353,7 @@ button.go{margin-top:18px;width:100%;padding:12px;border:0;border-radius:8px;bac
 button.go:active{transform:scale(.99);filter:brightness(1.15)}
 button.go:disabled{opacity:.55}
 .hide{display:none}
+.askq{font-size:14px;line-height:1.6;color:#eee}
 </style>
 </head>
 <body>
@@ -2374,7 +2380,9 @@ button.go:disabled{opacity:.55}
 <input id="codeN" placeholder="如 home，只用字母、数字、-、_">
 <button class="go" id="goN" onclick="genN()">生成转换链接</button>
 <div class="out" id="outN"><div id="linkN"></div>
-<div class="row"><button onclick="openL(this,'N')">打开链接</button><button onclick="copyL(this,'N')">复制链接</button></div></div>
+<div class="row" id="rowN"><button onclick="openL(this,'N')">打开链接</button><button onclick="copyL(this,'N')">复制链接</button></div>
+<div id="askN" class="hide"><div class="askq" id="askqN"></div><div class="row"><button onclick="doOverwrite('N')">覆盖更新</button><button onclick="cancelOverwrite('N')">换个后缀</button></div></div>
+<div id="noteN" style="color:#7bd88f;font-size:13px;margin-top:8px"></div></div>
 </div>
 
 <div id="secC" class="hide">
@@ -2391,7 +2399,9 @@ button.go:disabled{opacity:.55}
 <input id="codeC" placeholder="如 chain，只用字母、数字、-、_">
 <button class="go" id="goC" onclick="genC()">生成链式订阅链接</button>
 <div class="out" id="outC"><div id="linkC"></div>
-<div class="row"><button onclick="openL(this,'C')">打开链接</button><button onclick="copyL(this,'C')">复制链接</button></div></div>
+<div class="row" id="rowC"><button onclick="openL(this,'C')">打开链接</button><button onclick="copyL(this,'C')">复制链接</button></div>
+<div id="askC" class="hide"><div class="askq" id="askqC"></div><div class="row"><button onclick="doOverwrite('C')">覆盖更新</button><button onclick="cancelOverwrite('C')">换个后缀</button></div></div>
+<div id="noteC" style="color:#7bd88f;font-size:13px;margin-top:8px"></div></div>
 <p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ 是 Mihomo、/s/ 是 sing-box，同一个码改字母就能切换格式，不用重新生成。</p>
 </div>
 
@@ -2414,39 +2424,84 @@ function show(k){
 }
 function shorten(body,cb){
   fetch("/shorten",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
-    .then(function(r){return r.text().then(function(t){cb(r.ok?t:null,r.ok?null:t)})})
-    .catch(function(){cb(null,null)});
+    .then(function(r){return r.text().then(function(t){cb(r.ok?t:null,r.ok?null:t,r.status)})})
+    .catch(function(){cb(null,null,0)});
+}
+function countItems(s){return (s||"").split("|").filter(function(x){return x.trim().length>0}).length}
+function firstHostOf(s){
+  var f=((s||"").split("|")[0]||"").split("#")[0];
+  var m=f.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(?:[^@/?#]*@)?([^/:?#]+)/);
+  return m?m[1]:f.slice(0,40);
+}
+function describeOld(cd,rec){
+  var head="后缀「"+cd+"」是你之前生成过的一条";
+  var tail="只改内容、不换地址就点「覆盖更新」：会用这次填写的内容替换旧内容，订阅地址保持不变，已经导入的客户端不用改，下次更新就会拿到新内容。";
+  if(!rec) return head+"链接。"+tail;
+  var kind=rec.kind=="chain"?"链式代理":"普通转换";
+  var bits=[];
+  if(rec.kind=="chain"){
+    bits.push("入口 "+countItems(rec.entry)+" 条、出口 "+countItems(rec.exit)+" 条");
+  }else{
+    bits.push("共 "+countItems(rec.url)+" 条输入");
+    var h=firstHostOf(rec.url); if(h) bits.push("第一条来自 "+h);
+  }
+  return head+kind+"链接（"+bits.join("，")+"）。"+tail;
+}
+function askOverwrite(k,cd){
+  var q=document.getElementById("askq"+k);
+  q.textContent="正在读取这条旧链接的内容…";
+  fetch("/api/link/"+encodeURIComponent(cd)).then(function(r){return r.ok?r.json():null}).then(function(rec){q.textContent=describeOld(cd,rec)}).catch(function(){q.textContent=describeOld(cd,null)});
+  document.getElementById("link"+k).textContent="";
+  document.getElementById("note"+k).textContent="";
+  document.getElementById("row"+k).className="hide";
+  document.getElementById("ask"+k).className="";
+  document.getElementById("out"+k).style.display="block";
+}
+function doOverwrite(k){ if(k=="N")attemptN(true); else attemptC(true); }
+function cancelOverwrite(k){
+  document.getElementById("out"+k).style.display="none";
+  var i=document.getElementById(k=="N"?"codeN":"codeC"); i.focus(); i.select();
+}
+function showResult(k,u,force){
+  document.getElementById("ask"+k).className="hide";
+  document.getElementById("row"+k).className="row";
+  document.getElementById("note"+k).textContent=force?"已覆盖更新：订阅地址没有变，客户端下次更新就会拿到新内容。":"";
+  cur[k]=u;show(k);
 }
 function busy(id,on,txt){var b=document.getElementById(id);if(!b)return;b.disabled=on;b.textContent=on?"生成中…":txt}
-function genN(){
+function genN(){attemptN(false)}
+function attemptN(force){
   var it=items("u"); if(!it.length){alert("先粘贴节点或订阅链接");return}
   var tg=document.getElementById("t").value;
   var cd=document.getElementById("codeN").value.trim();
-  var body={target:tg,url:it.join("|")}; if(cd)body.code=cd;
+  var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
   busy("goN",true);
-  shorten(body,function(u,err){
+  shorten(body,function(u,err,st){
     busy("goN",false,"生成转换链接");
     if(!u){
+      if(cd&&st==409&&!force){askOverwrite("N",cd);return}
       if(cd){alert(err||"生成失败");return}
       var base=(tg=="clash"||tg=="singbox")?"/conv":"/sub";u=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"));
     }
-    cur.N=u;show("N");
+    showResult("N",u,force);
   });
 }
-function genC(){
+function genC(){attemptC(false)}
+function attemptC(force){
   var a=items("ein"), b=items("eout");
   if(!a.length||!b.length){alert("入口和出口都要填");return}
   var tg=document.getElementById("tc").value;
   var cd=document.getElementById("codeC").value.trim();
-  var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd;
+  var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
   busy("goC",true);
-  shorten(body,function(u,err){
+  shorten(body,function(u,err,st){
     busy("goC",false,"生成链式订阅链接");
     if(!u){
+      if(cd&&st==409&&!force){askOverwrite("C",cd);return}
       if(cd){alert(err||"生成失败");return}
       u=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"));
     }
-    cur.C=u;show("C");
+    showResult("C",u,force);
   });
 }
 function flash(btn,txt){
@@ -2532,7 +2587,8 @@ class H(BaseHTTPRequestHandler):
                 record = {"kind": "conv", "target": target, "url": items}
             else:
                 return self._send(400, "bad request")
-            code = _store_link(record, want or None)
+            code = _store_link(record, want or None,
+                               data.get("force") is True)
             if code is None:
                 return self._send(409, "这个后缀已被占用，换一个试试")
             host = self.headers.get("Host", "")
@@ -2546,6 +2602,17 @@ class H(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         if u.path in ("/", "/index.html"):
             return self._send(200, PAGE, "text/html; charset=utf-8")
+        if u.path.startswith("/api/link/"):
+            # Saved-config restore, mirroring the CF edition: hand the
+            # stored record back as JSON so the page can refill its
+            # form (and describe the old link in the overwrite ask).
+            code = urllib.parse.unquote(
+                u.path[len("/api/link/"):]).strip("/")
+            rec = _get_link(code) if code else None
+            if not rec:
+                return self._send(404, "link not found")
+            return self._send(200, json.dumps(rec),
+                              "application/json; charset=utf-8")
         if u.path.startswith("/rules/"):
             rel = urllib.parse.unquote(u.path[len("/rules/"):])
             try:
