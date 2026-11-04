@@ -2328,12 +2328,27 @@ def _get_link(code):
 
 
 # --------------------------------------------------------------------- page
+LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Subscription Converter">
+  <defs>
+    <linearGradient id="g" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="88" height="88" rx="22" fill="url(#g)"/>
+  <path d="M31 63 C31 33 65 63 65 33" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+  <circle cx="31" cy="63" r="7.5" fill="#ffffff"/>
+  <circle cx="65" cy="33" r="7.5" fill="none" stroke="#ffffff" stroke-width="5"/>
+  <circle cx="65" cy="33" r="2.2" fill="#ffffff"/>
+</svg>"""
+
 PAGE = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>订阅转换</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
 <style>
 body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px}
 .wrap{max-width:560px;margin:0 auto}
@@ -2361,6 +2376,7 @@ button.go:disabled{opacity:.55}
 </head>
 <body>
 <div class="wrap">
+<img src="/logo.svg" alt="Subscription Converter" style="width:52px;height:52px;display:block;margin-bottom:6px">
 <h1>订阅转换</h1>
 <div id="updatenote" style="display:none"></div>
 <div class="tabs">
@@ -2711,6 +2727,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send(e.code, e.read())
             except Exception as e:
                 return self._send(502, f"backend proxy failed: {e}")
+        if u.path == "/logo.svg":
+            return self._send(200, LOGO_SVG, "image/svg+xml")
         if u.path == "/version":
             try:
                 req = urllib.request.Request(CONVERTER_BASE + "/version")
