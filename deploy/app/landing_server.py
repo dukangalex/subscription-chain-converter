@@ -2422,10 +2422,10 @@ button.go:disabled{opacity:.55}
 <div class="row" id="rowC"><button onclick="openL(this,'C')">打开链接</button><button onclick="copyL(this,'C')">复制链接</button></div>
 <div id="askC" class="hide"><div class="askq" id="askqC"></div><div class="row"><button onclick="doOverwrite('C')">继续用这个后缀</button><button onclick="cancelOverwrite('C')">换个后缀</button></div></div>
 <div id="noteC" style="color:#7bd88f;font-size:13px;margin-top:8px"></div></div>
-<p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ 是 Mihomo、/s/ 是 sing-box，同一个码改字母就能切换格式，不用重新生成。</p>
+<p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：链式链接可改 /m/（Mihomo）与 /s/（sing-box）互相切换；普通转换的链接还能改 /v/（V2Ray）、/g/（Surge）、/l/（Loon）、/q/（Quantumult X）；/c/ 按生成时选的格式出。</p>
 </div>
 
-<p style="color:#777;font-size:13px">后端运行在你自己的 VPS 上，订阅链接不经过任何第三方。<br>v1.0.0 · 仓库 <a style="color:#7bd88f" href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a style="color:#7bd88f" href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></p>
+<p style="color:#777;font-size:13px">后端运行在你自己的 VPS 上，订阅链接不经过任何第三方。<br>v1.0.1 · 仓库 <a style="color:#7bd88f" href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a style="color:#7bd88f" href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></p>
 </div>
 <script>
 var cur={N:"",C:""};
@@ -2553,7 +2553,7 @@ function copyL(btn,k){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.0.0";
+  var CURVER="1.0.1";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function $(id){return document.getElementById(id)}
@@ -2680,7 +2680,8 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 return self._send(404, "not found")
             return self._send(200, data, "application/octet-stream")
-        _fmt = {"c": None, "m": "clash", "s": "singbox"}
+        _fmt = {"c": None, "m": "clash", "s": "singbox", "g": "surge",
+                "l": "loon", "q": "quanx", "v": "v2ray"}
         if (len(u.path) > 3 and u.path[0] == "/" and u.path[2] == "/"
                 and u.path[1] in _fmt):
             code = u.path[3:].strip("/")
@@ -2688,10 +2689,15 @@ class H(BaseHTTPRequestHandler):
             if not rec:
                 return self._send(404, "link not found")
             # The path letter picks the output format (m = Mihomo /
-            # clash, s = sing-box); /c/ falls back to the format the
-            # link was created with.
+            # clash, s = sing-box, g = Surge, l = Loon,
+            # q = Quantumult X, v = V2Ray); /c/ falls back to the
+            # format the link was created with.
             want = _fmt[u.path[1]] or rec.get("target") or ""
             if rec.get("kind") == "chain":
+                if u.path[1] != "c" and want not in ("clash", "singbox"):
+                    return self._send(
+                        400, "chain links on this edition serve "
+                             "Mihomo / Clash or sing-box only")
                 STAGE["cur"] = "start"
                 try:
                     body, ctype = (
