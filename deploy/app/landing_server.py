@@ -17,6 +17,7 @@ output, so generated configs keep the same shape as before.
 """
 import base64
 import copy
+import datetime
 import json
 import os
 import re
@@ -2307,6 +2308,17 @@ def _store_link(record, want_code=None, force=False):
     existing code for the same payload is reused (the target format
     is NOT part of a link's identity; the /m/ vs /s/ path letter
     picks it at fetch time), else a random code is generated."""
+    def stamp(rec, keep=None):
+        # Mirror the CF edition: a record carries its creation time
+        # (shown by the overwrite ask as 生成于 <date>); a forced
+        # rebind keeps the original stamp, as the CF UPDATE leaves
+        # created_at untouched.
+        out = dict(rec)
+        out["created"] = (keep or {}).get("created") or (
+            datetime.datetime.now(datetime.timezone.utc)
+            .isoformat().replace("+00:00", "Z"))
+        return out
+
     with _LINKS_LOCK:
         links = _load_links()
         if want_code:
@@ -2316,7 +2328,7 @@ def _store_link(record, want_code=None, force=False):
                     return want_code
                 if not force:
                     return None
-            links[want_code] = record
+            links[want_code] = stamp(record, rec)
             _save_links(links)
             return want_code
         for code, rec in links.items():
@@ -2327,7 +2339,7 @@ def _store_link(record, want_code=None, force=False):
                            for _ in range(10))
             if code not in links:
                 break
-        links[code] = record
+        links[code] = stamp(record)
         _save_links(links)
         return code
 
@@ -2497,7 +2509,7 @@ footer a{color:#5eead4}
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.2.0 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.2.1 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
