@@ -2136,6 +2136,63 @@ def _clashbase_chain(eprox, xprox):
             "text/yaml; charset=utf-8")
 
 
+_CHAIN_TARGETS = ("clash", "singbox", "surge", "loon", "quanx", "v2ray")
+
+
+def _run_textchain(target, entry_pool, exit_pool):
+    """Render a text-format chain config with the bundled
+    textchain.js — the CF edition's native text chain renderer,
+    extracted verbatim so both editions emit identical Surge /
+    Loon / Quantumult X / V2Ray chain output."""
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(here, "textchain.js")
+    # The candidate list is spelled out here rather than read from
+    # the module-level constant: the deployed copy of this file is
+    # spliced from a sanitized variant whose constant carries a
+    # different name, and this function must run identically in
+    # both copies.
+    candidates = [os.path.join(here, "tools", "node", "bin", "node"),
+                  os.path.join(here, "..", "tools", "node", "bin",
+                               "node"),
+                  "node"]
+    if os.environ.get("NODE_BIN"):
+        candidates.insert(0, os.environ["NODE_BIN"])
+    node = next((c for c in candidates
+                 if c == "node" or os.path.exists(c)), None)
+    if node is None or not os.path.exists(script):
+        raise ValueError("text chain renderer unavailable")
+    r = subprocess.run(
+        [node, script],
+        input=json.dumps({"target": target, "entries": entry_pool,
+                          "exits": exit_pool}),
+        capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise ValueError(r.stderr.strip() or "text chain render failed")
+    return r.stdout
+
+
+def merge_text_chain(target, entry_items, exit_items):
+    """Chain build for the text formats, mirroring the CF edition's
+    mergeTextChain: pools come from this edition's own gather; the
+    rendering itself is the shared textchain.js. V2Ray share links
+    cannot express a chain, so that target degrades to the exit
+    tier's plain link set and the entries are not even fetched."""
+    if target == "v2ray":
+        STAGE["cur"] = "exit-convert"
+        xnodes = gather(exit_items)
+        STAGE["cur"] = "merge"
+        return (_run_textchain(target, [], xnodes),
+                "text/plain; charset=utf-8")
+    STAGE["cur"] = "entry-convert"
+    enodes = gather(entry_items)
+    STAGE["cur"] = "exit-convert"
+    xnodes = gather(exit_items)
+    STAGE["cur"] = "merge"
+    return (_run_textchain(target, enodes, xnodes),
+            "text/plain; charset=utf-8")
+
+
 def merge_clash(entry_items, exit_items):
     import yaml
     STAGE["cur"] = "entry-convert"
@@ -2509,7 +2566,7 @@ footer a{color:#5eead4}
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.2.1 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.0 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -2791,7 +2848,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(
                     400, "自定义后缀只能用字母、数字、-、_，长度 3 到 32")
             if entry or exit_:
-                if (target not in ("singbox", "clash")
+                if (target not in _CHAIN_TARGETS
                         or not entry or not exit_):
                     return self._send(400, "bad request")
                 record = {"kind": "chain", "target": target,
@@ -2853,30 +2910,24 @@ class H(BaseHTTPRequestHandler):
             # q = Quantumult X, v = V2Ray). /c/ is the adaptive
             # link: it serves the format the fetching client
             # identifies as (User-Agent), falling back to the
-            # format the link was created with; on chain records
-            # (this edition builds clash / sing-box only) the
-            # adaptive choice stays within those two.
+            # format the link was created with.
             want = _fmt[u.path[1]]
             if want is None:
                 want = (_detect_client_format(
                             self.headers.get("User-Agent"))
                         or rec.get("target") or "")
-                if (rec.get("kind") == "chain"
-                        and want not in ("clash", "singbox")):
-                    want = (rec.get("target")
-                            if rec.get("target") in ("clash", "singbox")
-                            else "clash")
             if rec.get("kind") == "chain":
-                if u.path[1] != "c" and want not in ("clash", "singbox"):
-                    return self._send(
-                        400, "chain links on this edition serve "
-                             "Mihomo / Clash or sing-box only")
                 STAGE["cur"] = "start"
                 try:
-                    body, ctype = (
-                        merge_singbox(rec["entry"], rec["exit"])
-                        if want == "singbox"
-                        else merge_clash(rec["entry"], rec["exit"]))
+                    if want == "singbox":
+                        body, ctype = merge_singbox(
+                            rec["entry"], rec["exit"])
+                    elif want == "clash":
+                        body, ctype = merge_clash(
+                            rec["entry"], rec["exit"])
+                    else:
+                        body, ctype = merge_text_chain(
+                            want, rec["entry"], rec["exit"])
                 except Exception as e:
                     import sys
                     print(f"chain error via short link "
@@ -2957,12 +3008,16 @@ class H(BaseHTTPRequestHandler):
             target = (qs.get("target") or [""])[0]
             entry = (qs.get("entry") or [""])[0]
             exit_ = (qs.get("exit") or [""])[0]
-            if target not in ("singbox", "clash") or not entry or not exit_:
-                return self._send(400, "bad request: need target=singbox|clash, entry, exit")
+            if target not in _CHAIN_TARGETS or not entry or not exit_:
+                return self._send(400, "bad request")
             STAGE["cur"] = "start"
             try:
-                body, ctype = (merge_singbox(entry, exit_) if target == "singbox"
-                               else merge_clash(entry, exit_))
+                if target == "singbox":
+                    body, ctype = merge_singbox(entry, exit_)
+                elif target == "clash":
+                    body, ctype = merge_clash(entry, exit_)
+                else:
+                    body, ctype = merge_text_chain(target, entry, exit_)
             except Exception as e:
                 import sys
                 print(f"chain error target={target} stage={STAGE['cur']} err={e!r}",
