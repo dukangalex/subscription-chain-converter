@@ -2381,35 +2381,77 @@ PAGE = r"""<!DOCTYPE html>
 <title>订阅转换</title>
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
 <style>
-body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:24px}
-.wrap{max-width:560px;margin:0 auto}
-h1{font-size:20px}
-.tabs{display:flex;gap:8px;margin-bottom:8px}
-.tabs button{flex:1;padding:10px;border:1px solid #444;border-radius:8px;background:#1c1c1e;color:#bbb;font-size:15px}
-.tabs button.on{background:#0a84ff;color:#fff;border-color:#0a84ff}
-label{display:block;margin:16px 0 6px;color:#bbb;font-size:14px}
-select,textarea,input{width:100%;padding:10px;border-radius:8px;border:1px solid #444;background:#1c1c1e;color:#eee;box-sizing:border-box}
-textarea{resize:vertical;font-family:inherit}
-button.go{margin-top:18px;width:100%;padding:12px;border:0;border-radius:8px;background:#0a84ff;color:#fff;font-size:16px}
-.out{margin-top:18px;word-break:break-all;background:#1c1c1e;border:1px solid #333;border-radius:8px;padding:12px;display:none}
-.row{display:flex;gap:10px;margin-top:10px}
-.row button{flex:1;padding:10px;border:0;border-radius:8px;background:#333;color:#eee;transition:transform .08s,filter .08s,background .15s}
-.row button:active{transform:scale(.97);filter:brightness(1.3)}
-.row button.done{background:#248a3d;color:#fff}
-button.go:active{transform:scale(.99);filter:brightness(1.15)}
-button.go:disabled{opacity:.55}
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:#060809;color:#eef6f5;margin:0;padding:24px 16px 40px}
+.wrap{max-width:600px;margin:0 auto}
+h1{font-size:31px;font-weight:800;letter-spacing:.05em;text-align:center;margin:0 0 8px;background:linear-gradient(90deg,#2dd4bf,#3b82f6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:#a3bab5;font-size:14px;margin:0;text-align:center}
+.hero{text-align:center;margin:10px 0 22px}
+.hero .logo{width:64px;height:64px}
+.hero-badge{display:inline-block;font-size:11px;letter-spacing:.28em;color:#5eead4;border:1px solid rgba(45,212,191,.45);background:rgba(20,184,166,.10);padding:5px 12px 5px 15px;border-radius:999px;margin-bottom:14px}
+.hero::after{content:"";display:block;width:64px;height:3px;border-radius:2px;margin:16px auto 0;background:linear-gradient(90deg,#2dd4bf,#3b82f6)}
+.card{background:#0c1113;border:1px solid #1f2a2f;border-radius:12px;padding:16px;margin-bottom:16px}
+.card h2{font-size:15px;margin:0 0 10px;color:#eef6f5}
+.restore{display:flex;gap:8px}
+.restore input{flex:1}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tabs button{flex:1;padding:11px;border:1px solid #31424a;border-radius:10px;background:#11181b;color:#c3d2d0;font-size:15px;cursor:pointer}
+.tabs button.on{background:linear-gradient(135deg,#14b8a6,#2563eb);color:#fff;border-color:#14b8a6}
+label{display:block;margin:16px 0 6px;color:#c3d2d0;font-size:14px}
+label:first-of-type{margin-top:4px}
+select,textarea,input{width:100%;padding:10px;border-radius:8px;border:1px solid #31424a;background:#11181b;color:#eef6f5;font-size:15px}
+select:focus,textarea:focus,input:focus{outline:2px solid #14b8a6;border-color:#14b8a6}
+textarea{resize:vertical;font-family:inherit;line-height:1.5}
+.ta-wrap{position:relative}
+.clear{position:absolute;top:6px;right:6px;padding:3px 10px;border:1px solid #31424a;border-radius:6px;background:#162024;color:#a3bab5;font-size:12px;cursor:pointer}
+.go{margin-top:18px;width:100%;padding:13px;border:0;border-radius:10px;background:linear-gradient(135deg,#14b8a6,#2563eb);color:#fff;font-size:16px;cursor:pointer}
+.go:disabled{opacity:.55;cursor:wait}
+.err{display:none;color:#ef4444;font-size:14px;margin-top:10px}
+.ok{display:none;color:#22c55e;font-size:14px;margin-top:10px}
+.out{margin-top:18px;display:none}
+.link-row{background:#11181b;border:1px solid #1f2a2f;border-radius:10px;padding:12px;margin-top:10px}
+.link-row .tag{font-size:12px;color:#2dd4bf;margin-bottom:6px}
+.link-row .u{word-break:break-all;font-size:13px;color:#eef6f5;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.link-row .ops{display:flex;gap:8px;margin-top:10px}
+.link-row .ops button,.link-row .ops a{flex:1;padding:9px;border:0;border-radius:8px;background:#1b272c;color:#eef6f5;font-size:14px;text-align:center;text-decoration:none;cursor:pointer}
+.link-row .ops a.imp{background:linear-gradient(135deg,#14b8a6,#2563eb);color:#fff}
+.note{color:#a3bab5;font-size:13px;margin-top:10px;line-height:1.6}
 .hide{display:none}
-.askq{font-size:14px;line-height:1.6;color:#eee}
-.updatenote{display:flex;gap:10px;align-items:center;background:#12312b;border:1px solid #1f5c4d;color:#eee;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:14px}
-.updatenote a{color:#7bd88f}
-.updatenote button{margin-left:auto;background:#333;color:#eee;border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
+footer{color:#5d726d;font-size:13px;margin-top:24px;line-height:1.6}
+footer a{color:#5eead4}
+.updatenote{display:flex;gap:10px;align-items:center;background:rgba(20,184,166,.12);border:1px solid rgba(45,212,191,.45);color:#eef6f5;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:14px}
+.updatenote a{color:#5eead4}
+.updatenote button{margin-left:auto;background:#1b272c;color:#eef6f5;border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
+/* 结构层 (2.2): 双列 — 主表单左, 恢复卡右轨 */
+.wrap{max-width:860px}
+.wrap>.card{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 16px;margin-bottom:16px}
+.wrap>.card h2{margin:0;font-size:14px;white-space:nowrap}
+.wrap>.card .restore{flex:1;min-width:220px}
+.wrap>.card .err,.wrap>.card .ok{flex-basis:100%;margin-top:2px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<img src="/logo.svg" alt="Subscription Converter" style="width:52px;height:52px;display:block;margin-bottom:6px">
+<div id="updatenote" class="hide"></div>
+<div id="fillnote" class="hide"></div>
+<header class="hero">
+<img class="logo" src="/logo.svg" alt="Subscription Converter">
+<div class="hero-badge">SUBSCRIPTION CONVERTER · VPS端</div>
 <h1>订阅转换</h1>
-<div id="updatenote" style="display:none"></div>
+<p class="sub">把节点、订阅转成客户端能直接用的订阅链接，支持普通转换与链式代理。</p>
+</header>
+
+<div class="card">
+<h2>已有短链？恢复上次的填写</h2>
+<div class="restore">
+<input id="rcode" placeholder="粘贴短码或完整链接">
+<button class="go" style="margin-top:0;width:auto;padding:10px 18px" onclick="restore()">恢复</button>
+</div>
+<div class="err" id="rerr">没找到这个短码</div>
+<div class="ok" id="rok">已恢复到下方表单，可修改后重新生成</div>
+</div>
+
 <div class="tabs">
 <button id="tabN" class="on" onclick="mode('n')">普通转换</button>
 <button id="tabC" onclick="mode('c')">链式代理</button>
@@ -2417,7 +2459,7 @@ button.go:disabled{opacity:.55}
 
 <div id="secN">
 <label>节点 / 订阅（每行一个，可任意混填）</label>
-<textarea id="u" rows="6" placeholder="ss://...&#10;trojan://...&#10;https://订阅地址"></textarea>
+<div class="ta-wrap"><textarea id="u" rows="6" placeholder="ss://...&#10;trojan://...&#10;https://订阅地址"></textarea><button class="clear" onclick="clr('u')">清空</button></div>
 <label>目标格式</label>
 <select id="t">
 <option value="clash">Clash / Mihomo</option>
@@ -2430,53 +2472,120 @@ button.go:disabled{opacity:.55}
 <label>自定义后缀（可选，不填则随机）</label>
 <input id="codeN" placeholder="如 home，只用字母、数字、-、_">
 <button class="go" id="goN" onclick="genN()">生成转换链接</button>
-<div class="out" id="outN"><div id="linkN"></div>
-<div class="row" id="rowN"><button onclick="openL(this,'N')">打开链接</button><button onclick="copyL(this,'N')">复制链接</button></div>
-<div id="askN" class="hide"><div class="askq" id="askqN"></div><div class="row"><button onclick="doOverwrite('N')">继续用这个后缀</button><button onclick="cancelOverwrite('N')">换个后缀</button></div></div>
-<div id="noteN" style="color:#7bd88f;font-size:13px;margin-top:8px"></div></div>
+<div class="err" id="errN"></div>
+<div class="out" id="outN"></div>
 </div>
 
 <div id="secC" class="hide">
 <label>入口（每行一个，可混填节点与订阅）</label>
-<textarea id="ein" rows="4" placeholder="链的第一站，如日本入口节点或入口订阅"></textarea>
+<div class="ta-wrap"><textarea id="ein" rows="4" placeholder="链的第一站，如日本入口节点或入口订阅"></textarea><button class="clear" onclick="clr('ein')">清空</button></div>
 <label>出口（每行一个，可混填节点与订阅）</label>
-<textarea id="eout" rows="4" placeholder="链的第二站，如美国出口节点或出口订阅"></textarea>
+<div class="ta-wrap"><textarea id="eout" rows="4" placeholder="链的第二站，如美国出口节点或出口订阅"></textarea><button class="clear" onclick="clr('eout')">清空</button></div>
 <label>目标格式</label>
 <select id="tc">
 <option value="singbox">sing-box</option>
 <option value="clash">Mihomo / Clash</option>
+<option value="surge">Surge</option>
+<option value="loon">Loon</option>
+<option value="quanx">Quantumult X</option>
 </select>
 <label>自定义后缀（可选，不填则随机）</label>
 <input id="codeC" placeholder="如 chain，只用字母、数字、-、_">
 <button class="go" id="goC" onclick="genC()">生成链式订阅链接</button>
-<div class="out" id="outC"><div id="linkC"></div>
-<div class="row" id="rowC"><button onclick="openL(this,'C')">打开链接</button><button onclick="copyL(this,'C')">复制链接</button></div>
-<div id="askC" class="hide"><div class="askq" id="askqC"></div><div class="row"><button onclick="doOverwrite('C')">继续用这个后缀</button><button onclick="cancelOverwrite('C')">换个后缀</button></div></div>
-<div id="noteC" style="color:#7bd88f;font-size:13px;margin-top:8px"></div></div>
-<p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：链式链接可改 /m/（Mihomo）与 /s/（sing-box）互相切换；普通转换的链接还能改 /v/（V2Ray）、/g/（Surge）、/l/（Loon）、/q/（Quantumult X）；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出（链式自适应只在 Mihomo 与 sing-box 里选）。</p>
+<div class="err" id="errC"></div>
+<div class="out" id="outC"></div>
+<p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<p style="color:#777;font-size:13px">后端运行在你自己的 VPS 上，订阅链接不经过任何第三方。<br>v1.1.2 · 仓库 <a style="color:#7bd88f" href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a style="color:#7bd88f" href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></p>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.2.0 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
-var cur={N:"",C:""};
+function $(id){return document.getElementById(id)}
 function mode(m){
-  document.getElementById("secN").className = m=="n" ? "" : "hide";
-  document.getElementById("secC").className = m=="c" ? "" : "hide";
-  document.getElementById("tabN").className = m=="n" ? "on" : "";
-  document.getElementById("tabC").className = m=="c" ? "on" : "";
+  $("secN").className = m==="n" ? "" : "hide";
+  $("secC").className = m==="c" ? "" : "hide";
+  $("tabN").className = m==="n" ? "on" : "";
+  $("tabC").className = m==="c" ? "on" : "";
 }
-function items(id){
-  return document.getElementById(id).value.split(/\n+/).map(function(s){return s.trim()}).filter(function(s){return s.length>0});
+function clr(id){$(id).value="";$(id).focus()}
+function lines(id){
+  return $(id).value.split(/\n+/).map(function(s){return s.trim()}).filter(function(s){return s.length>0});
 }
-function show(k){
-  document.getElementById("link"+k).textContent=cur[k];
-  document.getElementById("out"+k).style.display="block";
+function showErr(id,msg){var e=$(id);e.textContent=msg;e.style.display="block"}
+function hideErr(id){$(id).style.display="none"}
+function extractCode(s){
+  s=(s||"").trim();
+  if(!s) return "";
+  s=s.split(/[?#]/)[0];
+  var parts=s.split("/").filter(function(p){return p.length>0});
+  return parts.length?parts[parts.length-1]:"";
 }
-function shorten(body,cb){
-  fetch("/shorten",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
-    .then(function(r){return r.text().then(function(t){cb(r.ok?t:null,r.ok?null:t,r.status)})})
-    .catch(function(){cb(null,null,0)});
+function restore(){
+  var code=extractCode($("rcode").value);
+  $("rerr").style.display="none";$("rok").style.display="none";
+  if(!code){$("rerr").style.display="block";return}
+  fetch("/api/link/"+encodeURIComponent(code)).then(function(r){
+    if(!r.ok) throw new Error("nf");
+    return r.json();
+  }).then(function(rec){
+    if(rec.kind==="chain"){
+      mode("c");
+      $("ein").value=(rec.entry||"").split("|").join("\n");
+      $("eout").value=(rec.exit||"").split("|").join("\n");
+      if(rec.target) $("tc").value=rec.target;
+      $("codeC").value=code;
+    }else{
+      mode("n");
+      $("u").value=(rec.url||"").split("|").join("\n");
+      if(rec.target) $("t").value=rec.target;
+      $("codeN").value=code;
+    }
+    $("rok").style.display="block";
+  }).catch(function(){
+    $("rerr").style.display="block";
+  });
+}
+function copyText(btn,txt){
+  function done(){var o=btn.textContent;btn.textContent="已复制";setTimeout(function(){btn.textContent=o},1200)}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(function(){fallback()});
+  }else{fallback()}
+  function fallback(){
+    var ta=document.createElement("textarea");
+    ta.value=txt;document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");done()}catch(e){}
+    document.body.removeChild(ta);
+  }
+}
+function linkRow(tag,url,imp){
+  var row=document.createElement("div");row.className="link-row";
+  var t=document.createElement("div");t.className="tag";t.textContent=tag;row.appendChild(t);
+  var u=document.createElement("div");u.className="u";u.textContent=url;row.appendChild(u);
+  var ops=document.createElement("div");ops.className="ops";
+  var cp=document.createElement("button");cp.textContent="复制链接";
+  cp.onclick=function(){copyText(cp,url)};
+  ops.appendChild(cp);
+  var op=document.createElement("button");op.textContent="打开链接";
+  op.onclick=function(){location.href=url};
+  ops.appendChild(op);
+  if(imp){
+    var a=document.createElement("a");a.className="imp";a.textContent=imp.label;a.href=imp.href;
+    ops.appendChild(a);
+  }
+  row.appendChild(ops);
+  return row;
+}
+function render(outId,rows,note){
+  var out=$(outId);out.innerHTML="";
+  rows.forEach(function(r){out.appendChild(linkRow(r.tag,r.url,r.imp))});
+  if(note){
+    var n=document.createElement("div");n.className="note";n.textContent=note;out.appendChild(n);
+  }
+  out.style.display="block";
+}
+function shorten(body){
+  return fetch("/shorten",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+    .then(function(r){return r.text().then(function(t){return {ok:r.ok,status:r.status,text:t}})});
 }
 function countItems(s){return (s||"").split("|").filter(function(x){return x.trim().length>0}).length}
 function firstHostOf(s){
@@ -2484,110 +2593,117 @@ function firstHostOf(s){
   var m=f.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(?:[^@/?#]*@)?([^/:?#]+)/);
   return m?m[1]:f.slice(0,40);
 }
-function describeOld(cd,rec){
-  var head="后缀「"+cd+"」是你之前生成过的一条";
+function describeOld(code,rec){
+  var head="后缀「"+code+"」是你之前生成过的一条";
   var tail="要继续用这个后缀，就点「继续用这个后缀」：会用这次填写的内容更新它，订阅地址保持不变，已经导入的客户端不用改，下次更新就会拿到新内容。不想用就换个后缀，你之前的链接不受影响。";
   if(!rec) return head+"链接。"+tail;
-  var kind=rec.kind=="chain"?"链式代理":"普通转换";
+  var kind=rec.kind==="chain"?"链式代理":"普通转换";
   var bits=[];
-  if(rec.kind=="chain"){
+  if(rec.kind==="chain"){
     bits.push("入口 "+countItems(rec.entry)+" 条、出口 "+countItems(rec.exit)+" 条");
   }else{
     bits.push("共 "+countItems(rec.url)+" 条输入");
     var h=firstHostOf(rec.url); if(h) bits.push("第一条来自 "+h);
   }
+  if(rec.created) bits.push("生成于 "+String(rec.created).slice(0,10));
   return head+kind+"链接（"+bits.join("，")+"）。"+tail;
 }
-function askOverwrite(k,cd){
-  var q=document.getElementById("askq"+k);
-  q.textContent="正在读取这条旧链接的内容…";
-  fetch("/api/link/"+encodeURIComponent(cd)).then(function(r){return r.ok?r.json():null}).then(function(rec){q.textContent=describeOld(cd,rec)}).catch(function(){q.textContent=describeOld(cd,null)});
-  document.getElementById("link"+k).textContent="";
-  document.getElementById("note"+k).textContent="";
-  document.getElementById("row"+k).className="hide";
-  document.getElementById("ask"+k).className="";
-  document.getElementById("out"+k).style.display="block";
+function askOverwrite(sec,code,retry,codeInputId){
+  var out=$(sec==="N"?"outN":"outC");out.innerHTML="";
+  var box=document.createElement("div");box.className="link-row";
+  var t=document.createElement("div");t.className="tag";t.textContent="这个后缀已经有你的一条链接了";box.appendChild(t);
+  var u=document.createElement("div");u.className="u";u.style.fontFamily="inherit";u.textContent="正在读取这条旧链接的内容…";box.appendChild(u);
+  var ops=document.createElement("div");ops.className="ops";
+  var b1=document.createElement("button");b1.textContent="继续用这个后缀";b1.onclick=function(){retry()};
+  var b2=document.createElement("button");b2.textContent="换个后缀";b2.onclick=function(){out.style.display="none";var i=$(codeInputId);i.focus();i.select();showErr(sec==="N"?"errN":"errC","已取消。换个后缀会生成新地址，你之前的链接不受影响")};
+  ops.appendChild(b1);ops.appendChild(b2);box.appendChild(ops);out.appendChild(box);out.style.display="block";
+  fetch("/api/link/"+encodeURIComponent(code)).then(function(r){return r.ok?r.json():null}).then(function(rec){u.textContent=describeOld(code,rec)}).catch(function(){u.textContent=describeOld(code,null)});
 }
-function doOverwrite(k){ if(k=="N")attemptN(true); else attemptC(true); }
-function cancelOverwrite(k){
-  document.getElementById("out"+k).style.display="none";
-  var i=document.getElementById(k=="N"?"codeN":"codeC"); i.focus(); i.select();
-}
-function showResult(k,u,force){
-  document.getElementById("ask"+k).className="hide";
-  document.getElementById("row"+k).className="row";
-  document.getElementById("note"+k).textContent=force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容。":"";
-  cur[k]=u;show(k);
-}
-function busy(id,on,txt){var b=document.getElementById(id);if(!b)return;b.disabled=on;b.textContent=on?"生成中…":txt}
 function genN(){attemptN(false)}
 function attemptN(force){
-  var it=items("u"); if(!it.length){alert("先粘贴节点或订阅链接");return}
-  var tg=document.getElementById("t").value;
-  var cd=document.getElementById("codeN").value.trim();
+  var it=lines("u");hideErr("errN");
+  if(!it.length){showErr("errN","先粘贴节点或订阅链接");return}
+  var tg=$("t").value, cd=$("codeN").value.trim();
   var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
-  busy("goN",true);
-  shorten(body,function(u,err,st){
-    busy("goN",false,"生成转换链接");
-    if(!u){
-      if(cd&&st==409&&!force){askOverwrite("N",cd);return}
-      if(cd){alert(err||"生成失败");return}
-      var base=(tg=="clash"||tg=="singbox")?"/conv":"/sub";u=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"));
+  var btn=$("goN");btn.disabled=true;btn.textContent="生成中…";
+  shorten(body).then(function(res){
+    if(res.ok){
+      var url=res.text.trim(), code=extractCode(url);
+      if(code){
+        var rows=[
+          {tag:"自适应（推荐）",url:location.origin+"/c/"+code},
+          {tag:"Mihomo",url:location.origin+"/m/"+code,imp:{label:"一键导入 Clash",href:"clash://install-config?url="+encodeURIComponent(location.origin+"/m/"+code)}},
+          {tag:"sing-box",url:location.origin+"/s/"+code,imp:{label:"一键导入 sing-box",href:"sing-box://import-remote-profile?url="+encodeURIComponent(location.origin+"/s/"+code)}},
+          {tag:"V2Ray",url:location.origin+"/v/"+code},
+          {tag:"Surge",url:location.origin+"/g/"+code},
+          {tag:"Loon",url:location.origin+"/l/"+code},
+          {tag:"Quantumult X",url:location.origin+"/q/"+code}
+        ];
+        render("outN",rows,force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容":"短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。");
+      }else{
+        render("outN",[{tag:"订阅链接",url:url}],force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容":"");
+      }
+    }else if(cd){
+      if(res.status===409&&!force){askOverwrite("N",cd,function(){attemptN(true)},"codeN")}else{showErr("errN",res.text||"生成失败")}
+    }else{
+      var base=(tg==="clash"||tg==="singbox")?"/conv":"/sub";
+      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"));
+      render("outN",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
-    showResult("N",u,force);
-  });
+  }).catch(function(){
+    if(cd){showErr("errN","生成失败，请稍后再试")}
+    else{
+      var base=(tg==="clash"||tg==="singbox")?"/conv":"/sub";
+      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"));
+      render("outN",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
+    }
+  }).finally(function(){btn.disabled=false;btn.textContent="生成转换链接"});
 }
 function genC(){attemptC(false)}
 function attemptC(force){
-  var a=items("ein"), b=items("eout");
-  if(!a.length||!b.length){alert("入口和出口都要填");return}
-  var tg=document.getElementById("tc").value;
-  var cd=document.getElementById("codeC").value.trim();
+  var a=lines("ein"), b=lines("eout");hideErr("errC");
+  if(!a.length||!b.length){showErr("errC","入口和出口都要填");return}
+  var tg=$("tc").value, cd=$("codeC").value.trim();
   var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
-  busy("goC",true);
-  shorten(body,function(u,err,st){
-    busy("goC",false,"生成链式订阅链接");
-    if(!u){
-      if(cd&&st==409&&!force){askOverwrite("C",cd);return}
-      if(cd){alert(err||"生成失败");return}
-      u=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"));
+  var btn=$("goC");btn.disabled=true;btn.textContent="生成中…";
+  shorten(body).then(function(res){
+    if(res.ok){
+      var url=res.text.trim(), code=extractCode(url);
+      if(code){
+        var rows=[
+          {tag:"自适应（推荐）",url:location.origin+"/c/"+code},
+          {tag:"Mihomo",url:location.origin+"/m/"+code,imp:{label:"一键导入 Clash",href:"clash://install-config?url="+encodeURIComponent(location.origin+"/m/"+code)}},
+          {tag:"sing-box",url:location.origin+"/s/"+code,imp:{label:"一键导入 sing-box",href:"sing-box://import-remote-profile?url="+encodeURIComponent(location.origin+"/s/"+code)}},
+          {tag:"Surge",url:location.origin+"/g/"+code},
+          {tag:"Loon",url:location.origin+"/l/"+code},
+          {tag:"Quantumult X",url:location.origin+"/q/"+code}
+        ];
+        render("outC",rows,force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容":"");
+      }else{
+        render("outC",[{tag:"订阅链接",url:url}],force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容":"");
+      }
+    }else if(cd){
+      if(res.status===409&&!force){askOverwrite("C",cd,function(){attemptC(true)},"codeC")}else{showErr("errC",res.text||"生成失败")}
+    }else{
+      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"));
+      render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
-    showResult("C",u,force);
-  });
+  }).catch(function(){
+    if(cd){showErr("errC","生成失败，请稍后再试")}
+    else{
+      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"));
+      render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
+    }
+  }).finally(function(){btn.disabled=false;btn.textContent="生成链式订阅链接"});
 }
-function flash(btn,txt){
-  if(btn._ft)return;
-  var o=btn.textContent;btn.textContent=txt;btn.classList.add("done");
-  btn._ft=setTimeout(function(){btn.textContent=o;btn.classList.remove("done");btn._ft=null},1400);
-}
-function openL(btn,k){
-  if(!cur[k])return;
-  flash(btn,"正在打开…");
-  setTimeout(function(){location.href=cur[k]},200);
-}
-function copyL(btn,k){
-  if(!cur[k])return;
-  function ok(){flash(btn,"已复制 ✓")}
-  function fail(){flash(btn,"复制失败，请长按链接复制")}
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(cur[k]).then(ok).catch(function(){fallback()});
-  }else{fallback()}
-  function fallback(){
-    var ta=document.createElement("textarea");
-    ta.value=cur[k];ta.style.position="fixed";ta.style.opacity="0";
-    document.body.appendChild(ta);ta.select();
-    try{document.execCommand("copy")?ok():fail()}catch(e){fail()}
-    document.body.removeChild(ta);
-  }
-}
+
 // Update check: compare the version published in the repo's VERSION
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.1.2";
+  var CURVER="1.1.0";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
-  function $(id){return document.getElementById(id)}
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
   function newer(a,b){var x=ver(a),y=ver(b);for(var k=0;k<3;k++){if((x[k]||0)!==(y[k]||0))return (x[k]||0)>(y[k]||0)}return false}
   var store=null; try{store=JSON.parse(localStorage.getItem(KEY)||"null")}catch(e){}
@@ -2599,8 +2715,8 @@ function copyL(btn,k){
     var s=document.createElement("span");s.textContent="有新版本 v"+v+" 可用（当前 v"+CURVER+"）。";bar.appendChild(s);
     var a=document.createElement("a");a.href=REPO;a.target="_blank";a.rel="noopener";a.textContent="去仓库查看更新";bar.appendChild(a);
     var x=document.createElement("button");x.textContent="知道了";
-    x.onclick=function(){bar.style.display="none";save({v:v,at:Date.now(),dismissed:v})};
-    bar.appendChild(x);bar.className="updatenote";bar.style.display="flex";
+    x.onclick=function(){bar.className="hide";save({v:v,at:Date.now(),dismissed:v})};
+    bar.appendChild(x);bar.className="updatenote";
   }
   if(store&&store.v&&newer(store.v,CURVER)&&(Date.now()-(store.at||0)<86400000))show(store.v);
   fetch("https://raw.githubusercontent.com/dukangalex/subscription-chain-converter/main/VERSION")
@@ -2613,6 +2729,7 @@ function copyL(btn,k){
       if(newer(v,CURVER))show(v);
     }).catch(function(){});
 })();
+
 </script>
 </body>
 </html>
