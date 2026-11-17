@@ -2456,7 +2456,7 @@ button.go:disabled{opacity:.55}
 <p style="color:#777;font-size:13px">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：链式链接可改 /m/（Mihomo）与 /s/（sing-box）互相切换；普通转换的链接还能改 /v/（V2Ray）、/g/（Surge）、/l/（Loon）、/q/（Quantumult X）；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出（链式自适应只在 Mihomo 与 sing-box 里选）。</p>
 </div>
 
-<p style="color:#777;font-size:13px">后端运行在你自己的 VPS 上，订阅链接不经过任何第三方。<br>v1.1.1 · 仓库 <a style="color:#7bd88f" href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a style="color:#7bd88f" href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></p>
+<p style="color:#777;font-size:13px">后端运行在你自己的 VPS 上，订阅链接不经过任何第三方。<br>v1.1.2 · 仓库 <a style="color:#7bd88f" href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a style="color:#7bd88f" href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></p>
 </div>
 <script>
 var cur={N:"",C:""};
@@ -2584,7 +2584,7 @@ function copyL(btn,k){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.1.1";
+  var CURVER="1.1.2";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function $(id){return document.getElementById(id)}
