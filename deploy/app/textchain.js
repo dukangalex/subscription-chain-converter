@@ -555,15 +555,15 @@ function assembleSurge(entries, exits) {
   lines.push("", "[Proxy Group]");
   if (entries) {
     lines.push(`${ENTRY_AUTO} = url-test, ${en.join(", ")}, ` +
-      `url=${TEST_URL}, interval=30, tolerance=100`);
+      `url=${TEST_URL}, interval=20, tolerance=50`);
     lines.push(`${EXIT_AUTO} = url-test, ${xn.join(", ")}, ` +
-      `url=${TEST_URL}, interval=30, tolerance=100`);
+      `url=${TEST_URL}, interval=20, tolerance=100`);
   }
   lines.push("Proxy = select, " +
     (entries ? `${EXIT_AUTO}, ${ENTRY_AUTO}, ` : "") +
     `${AUTO_GROUP}, ${all.join(", ")}, DIRECT`);
   lines.push(`${AUTO_GROUP} = url-test, ${xn.join(", ")}, ` +
-    `url=${TEST_URL}, interval=30, tolerance=100`);
+    `url=${TEST_URL}, interval=20, tolerance=100`);
   lines.push("", "[Rule]");
   for (const [cidr] of PRIVATE_RULES) {
     lines.push(`IP-CIDR,${cidr},DIRECT,no-resolve`);
@@ -594,15 +594,15 @@ function assembleLoon(entries, exits) {
   lines.push("", "[Proxy Group]");
   if (entries) {
     lines.push(`${ENTRY_AUTO} = url-test,${en.join(",")},` +
-      `url=${TEST_URL},interval=30,tolerance=100`);
+      `url=${TEST_URL},interval=20,tolerance=50`);
     lines.push(`${EXIT_AUTO} = url-test,${xn.join(",")},` +
-      `url=${TEST_URL},interval=30,tolerance=100`);
+      `url=${TEST_URL},interval=20,tolerance=100`);
   }
   lines.push("Proxy = select," +
     (entries ? `${CHAIN_GROUP},${EXIT_AUTO},${ENTRY_AUTO},` : "") +
     `${AUTO_GROUP},${all.join(",")},DIRECT`);
   lines.push(`${AUTO_GROUP} = url-test,${xn.join(",")},` +
-    `url=${TEST_URL},interval=30,tolerance=100`);
+    `url=${TEST_URL},interval=20,tolerance=100`);
   lines.push("", "[Rule]");
   for (const [cidr] of PRIVATE_RULES) {
     lines.push(`IP-CIDR,${cidr},DIRECT,no-resolve`);
@@ -629,15 +629,15 @@ function assembleQuanx(entries, exits) {
   lines.push("", "[policy]");
   if (entries) {
     lines.push(`url-latency-benchmark=${ENTRY_AUTO}, ${en.join(", ")}, ` +
-      "check-interval=30, tolerance=100");
+      "check-interval=20, tolerance=50");
     lines.push(`url-latency-benchmark=${EXIT_AUTO}, ${xn.join(", ")}, ` +
-      "check-interval=30, tolerance=100");
+      "check-interval=20, tolerance=100");
   }
   lines.push("static=Proxy, " +
     (entries ? `${EXIT_AUTO}, ${ENTRY_AUTO}, ` : "") +
     `${AUTO_GROUP}, ${all.join(", ")}, direct`);
   lines.push(`url-latency-benchmark=${AUTO_GROUP}, ${xn.join(", ")}, ` +
-    "check-interval=30, tolerance=100");
+    "check-interval=20, tolerance=100");
   lines.push("", "[filter_local]");
   for (const [cidr] of PRIVATE_RULES) {
     lines.push(`ip-cidr, ${cidr}, direct`);

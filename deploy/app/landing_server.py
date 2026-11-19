@@ -1671,7 +1671,7 @@ def _mark_chain_groups_clash(cfg):
             ren[name] = new
             g["name"] = new
             existing.add(new)
-    chain_params = {"url": TEST_URL, "interval": 30, "tolerance": 100,
+    chain_params = {"url": TEST_URL, "interval": 20, "tolerance": 100,
                     "lazy": False, "timeout": 5000, "max-failed-times": 3}
     entries = {p.get("name") for p in cfg.get("proxies") or []
                if isinstance(p, dict) and not p.get("dialer-proxy")}
@@ -1683,6 +1683,12 @@ def _mark_chain_groups_clash(cfg):
                 and mem and (all(m in exits for m in mem)
                              or all(m in entries for m in mem))):
             g.update(chain_params)
+            if all(m in entries for m in mem):
+                # Entry-pool groups check one hop (small jitter):
+                # switch to a clearly faster entry sooner. Exit-pool
+                # groups keep tolerance 100 — two-hop jitter would
+                # flap them (2026-10-29 tuning note).
+                g["tolerance"] = 50
         if g.get("name") == "\u9ed8\u8ba4\u4ee3\u7406" \
                 and EXIT_AUTO in (g.get("proxies") or []):
             rest = [m for m in g["proxies"] if m != EXIT_AUTO]
@@ -1754,8 +1760,9 @@ def _mark_chain_groups_singbox(cfg):
         if (o.get("type") == "urltest" and mem
                 and (all(m in exits for m in mem)
                      or all(m in entries for m in mem))):
-            o["interval"] = "30s"
-            o["tolerance"] = 100
+            o["interval"] = "20s"
+            o["tolerance"] = (50 if all(m in entries for m in mem)
+                              else 100)
         if o.get("tag") == "\u9ed8\u8ba4\u4ee3\u7406" \
                 and EXIT_AUTO in (o.get("outbounds") or []):
             rest = [m for m in o["outbounds"] if m != EXIT_AUTO]
@@ -1834,10 +1841,15 @@ def merge_singbox(entry_items, exit_items):
     # latency jitter is large, and a tight tolerance makes
     # url-test flap between near-equal exits (client-side logs,
     # AngelaMihomo chain fix, same day).
-    urltest = {"url": TEST_URL, "interval": "1m", "tolerance": 100}
+    # 2026-11-19: interval 1m -> 20s on both tiers (dead-node
+    # detection was still gated by the probe round), and the
+    # ENTRY tier's tolerance tightened to 50 — entry checks are
+    # one-hop with small jitter, so the anti-flap argument for
+    # 100 does not apply there; the exit tier keeps 100.
+    urltest = {"url": TEST_URL, "interval": "20s", "tolerance": 100}
     out.append({"type": "urltest", "tag": ENTRY_AUTO,
                 "outbounds": [emap[o["tag"]] for o in enodes],
-                **{**urltest, "interval": "1m"}})
+                **{**urltest, "interval": "20s", "tolerance": 50}})
     out.append({"type": "urltest", "tag": EXIT_AUTO,
                 "outbounds": [xmap[o["tag"]] for o in xnodes], **urltest})
     xcfg["outbounds"] = out
@@ -1979,7 +1991,7 @@ def _clashbase_chain(eprox, xprox):
         return None
     groups = out.setdefault("proxy-groups", [])
     groups.append({"name": ENTRY_AUTO, "type": "url-test",
-                    "url": TEST_URL, "interval": 60, "tolerance": 100, "lazy": False, "timeout": 5000, "max-failed-times": 3,
+                    "url": TEST_URL, "interval": 20, "tolerance": 50, "lazy": False, "timeout": 5000, "max-failed-times": 3,
                     "proxies": entry_names})
     # BACKEND-ADAPTED (2026-10-25): the base DNS baseline bootstraps
     # node-hostname resolution over DoT (tls://223.5.5.5, TCP 853).
@@ -2051,7 +2063,7 @@ def _clashbase_chain(eprox, xprox):
             return _rule
         out["rules"] = [_retarget(r) for r in out.get("rules") or []]
     _groups.insert(0, {"name": EXIT_AUTO, "type": "url-test",
-                       "url": TEST_URL, "interval": 60,
+                       "url": TEST_URL, "interval": 20,
                        "tolerance": 100,
                        "lazy": False,
                        "timeout": 5000,
@@ -2251,7 +2263,7 @@ def merge_clash(entry_items, exit_items):
     # jitter too much for tighter switching (client-side logs,
     # AngelaMihomo chain fix, same day). Forced recheck after
     # 3 failures.
-    urltest = {"type": "url-test", "url": TEST_URL, "interval": 60,
+    urltest = {"type": "url-test", "url": TEST_URL, "interval": 20,
                "tolerance": 100,
                "lazy": False,
                "timeout": 5000,
@@ -2566,7 +2578,7 @@ footer a{color:#5eead4}
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.0 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.1 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
