@@ -2434,6 +2434,28 @@ def _save_links(links):
         pass
 
 
+def _clean_sub_name(raw):
+    """Sanitize a user-chosen subscription display name: it travels
+    in response headers, so strip control characters and quotes,
+    collapse whitespace, cap the length."""
+    s = re.sub(r'[\x00-\x1f\x7f"]+', " ", str(raw or ""))
+    s = re.sub(r"\s+", " ", s).strip()
+    return s[:80] or None
+
+
+def _name_headers(name):
+    """(Content-Disposition, profile-title) values for a
+    subscription name, or (None, None). Clients name the imported
+    profile from one of these two headers."""
+    if not name:
+        return None, None
+    disp = "attachment; filename*=UTF-8''" + urllib.parse.quote(
+        name, safe="")
+    title = "base64:" + base64.b64encode(
+        name.encode("utf-8")).decode("ascii")
+    return disp, title
+
+
 def _same_payload(a, b):
     return (isinstance(a, dict) and isinstance(b, dict)
             and a.get("kind") == b.get("kind")
@@ -2481,6 +2503,10 @@ def _store_link(record, want_code=None, force=False):
             rec = links.get(want_code)
             if rec is not None:
                 if _same_payload(rec, record):
+                    if (record.get("name")
+                            and rec.get("name") != record["name"]):
+                        rec["name"] = record["name"]
+                        _save_links(links)
                     return want_code
                 if not force:
                     return None
@@ -2489,6 +2515,10 @@ def _store_link(record, want_code=None, force=False):
             return want_code
         for code, rec in links.items():
             if _same_payload(rec, record):
+                if (record.get("name")
+                        and rec.get("name") != record["name"]):
+                    rec["name"] = record["name"]
+                    _save_links(links)
                 return code
         while True:
             code = "".join(secrets.choice(_LINK_ALPHABET)
@@ -2639,6 +2669,8 @@ footer a{color:#5eead4}
 </select>
 <label>自定义后缀（可选，不填则随机）</label>
 <input id="codeN" placeholder="如 home，只用字母、数字、-、_">
+<label>订阅名（可选，导入客户端时显示的名字）</label>
+<input id="nameN" placeholder="如 UR丹佛">
 <button class="go" id="goN" onclick="genN()">生成转换链接</button>
 <div class="err" id="errN"></div>
 <div class="out" id="outN"></div>
@@ -2659,13 +2691,15 @@ footer a{color:#5eead4}
 </select>
 <label>自定义后缀（可选，不填则随机）</label>
 <input id="codeC" placeholder="如 chain，只用字母、数字、-、_">
+<label>订阅名（可选，导入客户端时显示的名字）</label>
+<input id="nameC" placeholder="如 UR丹佛">
 <button class="go" id="goC" onclick="genC()">生成链式订阅链接</button>
 <div class="err" id="errC"></div>
 <div class="out" id="outC"></div>
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.4 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.5 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -2707,11 +2741,13 @@ function restore(){
       $("eout").value=(rec.exit||"").split("|").join("\n");
       if(rec.target) $("tc").value=rec.target;
       $("codeC").value=code;
+      if(rec.name) $("nameC").value=rec.name;
     }else{
       mode("n");
       $("u").value=(rec.url||"").split("|").join("\n");
       if(rec.target) $("t").value=rec.target;
       $("codeN").value=code;
+      if(rec.name) $("nameN").value=rec.name;
     }
     $("rok").style.display="block";
   }).catch(function(){
@@ -2796,8 +2832,8 @@ function genN(){attemptN(false)}
 function attemptN(force){
   var it=itemsOf("u");hideErr("errN");
   if(!it.length){showErr("errN","先粘贴节点或订阅链接");return}
-  var tg=$("t").value, cd=$("codeN").value.trim();
-  var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
+  var tg=$("t").value, cd=$("codeN").value.trim(), nm=$("nameN").value.trim();
+  var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm;
   var btn=$("goN");btn.disabled=true;btn.textContent="生成中…";
   shorten(body).then(function(res){
     if(res.ok){
@@ -2820,14 +2856,14 @@ function attemptN(force){
       if(res.status===409&&!force){askOverwrite("N",cd,function(){attemptN(true)},"codeN")}else{showErr("errN",res.text||"生成失败")}
     }else{
       var base=(tg==="clash"||tg==="singbox")?"/conv":"/sub";
-      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"));
+      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
       render("outN",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).catch(function(){
     if(cd){showErr("errN","生成失败，请稍后再试")}
     else{
       var base=(tg==="clash"||tg==="singbox")?"/conv":"/sub";
-      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"));
+      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
       render("outN",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).finally(function(){btn.disabled=false;btn.textContent="生成转换链接"});
@@ -2836,8 +2872,8 @@ function genC(){attemptC(false)}
 function attemptC(force){
   var a=itemsOf("ein"), b=itemsOf("eout");hideErr("errC");
   if(!a.length||!b.length){showErr("errC","入口和出口都要填");return}
-  var tg=$("tc").value, cd=$("codeC").value.trim();
-  var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
+  var tg=$("tc").value, cd=$("codeC").value.trim(), nm=$("nameC").value.trim();
+  var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm;
   var btn=$("goC");btn.disabled=true;btn.textContent="生成中…";
   shorten(body).then(function(res){
     if(res.ok){
@@ -2858,13 +2894,13 @@ function attemptC(force){
     }else if(cd){
       if(res.status===409&&!force){askOverwrite("C",cd,function(){attemptC(true)},"codeC")}else{showErr("errC",res.text||"生成失败")}
     }else{
-      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"));
+      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
       render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).catch(function(){
     if(cd){showErr("errC","生成失败，请稍后再试")}
     else{
-      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"));
+      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
       render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).finally(function(){btn.disabled=false;btn.textContent="生成链式订阅链接"});
@@ -2874,7 +2910,7 @@ function attemptC(force){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.3.4";
+  var CURVER="1.3.5";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
@@ -2913,12 +2949,17 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _send(self, code, body, ctype="text/plain; charset=utf-8"):
+    def _send(self, code, body, ctype="text/plain; charset=utf-8",
+              name=None):
         if isinstance(body, str):
             body = body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        disp, title = _name_headers(name)
+        if disp:
+            self.send_header("Content-Disposition", disp)
+            self.send_header("profile-title", title)
         # Browser-based converter frontends call this backend cross-origin.
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
@@ -2944,6 +2985,7 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 return self._send(400, "bad request")
             target = str(data.get("target") or "")
+            sub_name = _clean_sub_name(data.get("name"))
             entry = str(data.get("entry") or "")
             exit_ = str(data.get("exit") or "")
             items = str(data.get("url") or "")
@@ -2959,6 +3001,8 @@ class H(BaseHTTPRequestHandler):
                           "entry": entry, "exit": exit_}
             elif items and target:
                 record = {"kind": "conv", "target": target, "url": items}
+            if sub_name:
+                record["name"] = sub_name
             else:
                 return self._send(400, "bad request")
             code = _store_link(record, want or None,
@@ -3039,7 +3083,8 @@ class H(BaseHTTPRequestHandler):
                           file=sys.stderr, flush=True)
                     return self._send(
                         502, f"chain generate failed at {STAGE['cur']}: {e}")
-                return self._send(200, body, ctype)
+                return self._send(200, body, ctype,
+                                  name=rec.get("name"))
             target = want
             items = rec.get("url") or ""
             if target in ("singbox", "clash") and items:
@@ -3047,14 +3092,16 @@ class H(BaseHTTPRequestHandler):
                     body, ctype = build_config(target, items)
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
-                return self._send(200, body, ctype)
+                return self._send(200, body, ctype,
+                                  name=rec.get("name"))
             if items:
                 try:
                     local = _plain_text_local(target, items)
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
                 if local:
-                    return self._send(200, local[0], local[1])
+                    return self._send(200, local[0], local[1],
+                                      name=rec.get("name"))
             try:
                 q = urllib.parse.urlencode({"target": target, "url": items})
                 req = urllib.request.Request(
@@ -3063,7 +3110,8 @@ class H(BaseHTTPRequestHandler):
                 with urllib.request.urlopen(req, timeout=60) as r:
                     return self._send(r.status, r.read(),
                                       r.headers.get("Content-Type",
-                                                    "text/plain"))
+                                                    "text/plain"),
+                                      name=rec.get("name"))
             except urllib.error.HTTPError as e:
                 return self._send(e.code, e.read())
             except Exception as e:
@@ -3081,19 +3129,21 @@ class H(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(u.query)
             target = (qs.get("target") or [""])[0]
             items = (qs.get("url") or [""])[0]
+            sub_name = _clean_sub_name((qs.get("name") or [""])[0])
             if target in ("singbox", "clash") and items:
                 try:
                     body, ctype = build_config(target, items)
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
-                return self._send(200, body, ctype)
+                return self._send(200, body, ctype, name=sub_name)
             if items:
                 try:
                     local = _plain_text_local(target, items)
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
                 if local:
-                    return self._send(200, local[0], local[1])
+                    return self._send(200, local[0], local[1],
+                                      name=sub_name)
             try:
                 req = urllib.request.Request(
                     CONVERTER_BASE + self.path,
@@ -3111,6 +3161,7 @@ class H(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(u.query)
             target = (qs.get("target") or [""])[0]
             items = (qs.get("url") or [""])[0]
+            sub_name = _clean_sub_name((qs.get("name") or [""])[0])
             if target not in ("singbox", "clash") or not items:
                 return self._send(400, "bad request")
             try:
@@ -3120,12 +3171,13 @@ class H(BaseHTTPRequestHandler):
                 print(f"conv error target={target} err={e!r}",
                       file=sys.stderr, flush=True)
                 return self._send(502, f"convert failed: {e}")
-            return self._send(200, body, ctype)
+            return self._send(200, body, ctype, name=sub_name)
         if u.path == "/chain":
             qs = urllib.parse.parse_qs(u.query)
             target = (qs.get("target") or [""])[0]
             entry = (qs.get("entry") or [""])[0]
             exit_ = (qs.get("exit") or [""])[0]
+            sub_name = _clean_sub_name((qs.get("name") or [""])[0])
             if target not in _CHAIN_TARGETS or not entry or not exit_:
                 return self._send(400, "bad request")
             STAGE["cur"] = "start"
@@ -3141,7 +3193,7 @@ class H(BaseHTTPRequestHandler):
                 print(f"chain error target={target} stage={STAGE['cur']} err={e!r}",
                       file=sys.stderr, flush=True)
                 return self._send(502, f"chain generate failed at {STAGE['cur']}: {e}")
-            return self._send(200, body, ctype)
+            return self._send(200, body, ctype, name=sub_name)
         return self._send(404, "not found")
 
 
