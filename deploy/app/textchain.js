@@ -151,7 +151,15 @@ function nodeToShareLink(node) {
         ["sni", sni], ["insecure", scv ? "1" : ""],
       ]) + frag;
   }
-  // snell, ssr, socks5, http, wireguard, ... have no standard share
+  if (t === "http") {
+    const auth = node.username
+      ? encodeURIComponent(String(node.username)) +
+        (node.password
+          ? ":" + encodeURIComponent(String(node.password)) : "") + "@"
+      : "";
+    return `${node.tls ? "https" : "http"}://${auth}${host}:${port}` + frag;
+  }
+  // snell, ssr, socks5, wireguard, ... have no standard share
   // link; skip rather than emit something no client can import.
   return null;
 }
@@ -802,8 +810,9 @@ process.stdin.on("data", (d) => { input += d; });
 process.stdin.on("end", () => {
   try {
     const req = JSON.parse(input);
-    const [body] = textChainFromPools(
-      req.target, req.entries, req.exits);
+    const [body] = Array.isArray(req.plain)
+      ? buildTextPlain(req.target, req.plain)
+      : textChainFromPools(req.target, req.entries, req.exits);
     process.stdout.write(body);
   } catch (e) {
     process.stderr.write(String((e && e.message) || e));

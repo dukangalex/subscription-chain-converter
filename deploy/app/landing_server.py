@@ -209,6 +209,23 @@ def parse_uri(line):
             if q.get("sni"):
                 node["servername"] = q["sni"][0]
             return node
+        if scheme in ("http", "https"):
+            # HTTP(S) proxy endpoints are handed out as bare links
+            # (https://host:port, optional userinfo and #name). Only
+            # the strict endpoint shape counts: explicit port, no
+            # path, no query — anything else with these schemes is
+            # a subscription URL, not a node.
+            if not host or not port or u.path not in ("", "/") or u.query:
+                return None
+            node = {"name": name if name != scheme else f"{scheme}-{port}",
+                    "type": "http", "server": host, "port": port}
+            if u.username:
+                node["username"] = _unq(u.username)
+            if u.password:
+                node["password"] = _unq(u.password)
+            if scheme == "https":
+                node["tls"] = True
+            return node
     except Exception:
         return None
     return None
@@ -350,12 +367,21 @@ def gather(items):
         if not item:
             continue
         if item.startswith(("http://", "https://")):
-            found = _fetch_nodes(item)
+            pn = parse_uri(item)
+            found = [pn] if pn else _fetch_nodes(item)
         else:
             found = [n for n in [parse_uri(item)] if n]
         for n in found:
             if not n.get("server") or not n.get("type"):
                 continue
+            if any(isinstance(n.get(k), str)
+                   and n[k].strip().lower() in ("none", "null")
+                   for k in ("username", "password")):
+                n = dict(n)
+                for k in ("username", "password"):
+                    if isinstance(n.get(k), str) and \
+                            n[k].strip().lower() in ("none", "null"):
+                        del n[k]
             name = str(n.get("name") or n["type"])
             if name in seen:
                 seen[name] += 1
@@ -471,6 +497,13 @@ def sb_emit(node):
     elif t == "anytls":
         ob["password"] = node.get("password") or ""
         ob["tls"] = _tls_sb(node)
+    elif t == "http":
+        if node.get("username"):
+            ob["username"] = node["username"]
+        if node.get("password"):
+            ob["password"] = node["password"]
+        if node.get("tls"):
+            ob["tls"] = _tls_sb(node)
     else:
         raise ValueError(f"unsupported node type for sing-box: {t}")
     return ob
@@ -2205,6 +2238,47 @@ def merge_text_chain(target, entry_items, exit_items):
             "text/plain; charset=utf-8")
 
 
+def _plain_text_local(target, items):
+    """Local plain-text rendering for link-only inputs that carry
+    HTTP(S) proxy endpoints. The delegated backend reads a bare
+    https://host:port item as a subscription URL and fails on it,
+    while the native renderer shared with the CF edition handles
+    it. Inputs that are not purely node links, or carry no HTTP(S)
+    endpoint, keep the backend path unchanged."""
+    parts = [p.strip() for p in (items or "").split("|") if p.strip()]
+    if not parts:
+        return None
+    has_http = False
+    for p in parts:
+        n = parse_uri(p)
+        if not n:
+            return None
+        if n.get("type") == "http":
+            has_http = True
+    if not has_http:
+        return None
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(here, "textchain.js")
+    candidates = [os.path.join(here, "tools", "node", "bin", "node"),
+                  os.path.join(here, "..", "tools", "node", "bin",
+                               "node"),
+                  "node"]
+    if os.environ.get("NODE_BIN"):
+        candidates.insert(0, os.environ["NODE_BIN"])
+    node = next((c for c in candidates
+                 if c == "node" or os.path.exists(c)), None)
+    if node is None or not os.path.exists(script):
+        return None
+    r = subprocess.run(
+        [node, script],
+        input=json.dumps({"target": target, "plain": gather(items)}),
+        capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise ValueError(r.stderr.strip() or "text render failed")
+    return (r.stdout, "text/plain; charset=utf-8")
+
+
 def merge_clash(entry_items, exit_items):
     import yaml
     STAGE["cur"] = "entry-convert"
@@ -2578,7 +2652,7 @@ footer a{color:#5eead4}
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.1 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.2 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -2782,7 +2856,7 @@ function attemptC(force){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.1.0";
+  var CURVER="1.3.2";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
@@ -2956,6 +3030,13 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
                 return self._send(200, body, ctype)
+            if items:
+                try:
+                    local = _plain_text_local(target, items)
+                except Exception as e:
+                    return self._send(502, f"convert failed: {e}")
+                if local:
+                    return self._send(200, local[0], local[1])
             try:
                 q = urllib.parse.urlencode({"target": target, "url": items})
                 req = urllib.request.Request(
@@ -2988,6 +3069,13 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
                 return self._send(200, body, ctype)
+            if items:
+                try:
+                    local = _plain_text_local(target, items)
+                except Exception as e:
+                    return self._send(502, f"convert failed: {e}")
+                if local:
+                    return self._send(200, local[0], local[1])
             try:
                 req = urllib.request.Request(
                     CONVERTER_BASE + self.path,
