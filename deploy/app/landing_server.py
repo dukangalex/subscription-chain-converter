@@ -366,7 +366,11 @@ def gather(items):
         item = item.strip()
         if not item:
             continue
-        if item.startswith(("http://", "https://")):
+        if "\n" in item:
+            # A whole pasted document (Clash YAML, sing-box JSON):
+            # classify it like fetched subscription content.
+            found = _classify_text(item)
+        elif item.startswith(("http://", "https://")):
             pn = parse_uri(item)
             found = [pn] if pn else _fetch_nodes(item)
         else:
@@ -2661,7 +2665,7 @@ footer a{color:#5eead4}
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.3 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.4 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -2674,6 +2678,11 @@ function mode(m){
 function clr(id){$(id).value="";$(id).focus()}
 function lines(id){
   return $(id).value.split(/\n+/).map(function(s){return s.trim()}).filter(function(s){return s.length>0});
+}
+function itemsOf(id){
+  var t=$(id).value.trim();
+  if(t && (t.charAt(0)==="{" || /(^|\n)\s*proxies\s*:/.test(t))) return [t];
+  return lines(id);
 }
 function showErr(id,msg){var e=$(id);e.textContent=msg;e.style.display="block"}
 function hideErr(id){$(id).style.display="none"}
@@ -2785,7 +2794,7 @@ function askOverwrite(sec,code,retry,codeInputId){
 }
 function genN(){attemptN(false)}
 function attemptN(force){
-  var it=lines("u");hideErr("errN");
+  var it=itemsOf("u");hideErr("errN");
   if(!it.length){showErr("errN","先粘贴节点或订阅链接");return}
   var tg=$("t").value, cd=$("codeN").value.trim();
   var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
@@ -2825,7 +2834,7 @@ function attemptN(force){
 }
 function genC(){attemptC(false)}
 function attemptC(force){
-  var a=lines("ein"), b=lines("eout");hideErr("errC");
+  var a=itemsOf("ein"), b=itemsOf("eout");hideErr("errC");
   if(!a.length||!b.length){showErr("errC","入口和出口都要填");return}
   var tg=$("tc").value, cd=$("codeC").value.trim();
   var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true;
@@ -2865,7 +2874,7 @@ function attemptC(force){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.3.3";
+  var CURVER="1.3.4";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
