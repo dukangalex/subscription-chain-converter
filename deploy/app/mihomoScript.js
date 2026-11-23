@@ -1469,7 +1469,7 @@ const serviceConfigs = [
   {
     name: '远控工具',
     baseOption: selectBaseOption,
-    fixedProxies: ['默认代理', 'REJECT-DROP'],
+    fixedProxies: ['默认代理', 'DIRECT', 'REJECT-DROP'],
     rules: [
       'PROCESS-NAME-WILDCARD,*AnyDesk*,远控工具',
       'PROCESS-NAME-WILDCARD,*ToDesk*,远控工具',

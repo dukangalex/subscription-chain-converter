@@ -989,7 +989,7 @@ function main(config) {
     });
     addService({
       name: "远控工具",
-      fixed: ["REJECT", "默认代理", "直连"],
+      fixed: ["REJECT", "默认代理", "direct", "直连"],
       extra: [
         {
           process_name: ["anydesk", "ToDesk", "TeamViewer", "rustdesk", "tailscaled", "zerotier-one", "ngrok", "frpc", "frps", "cloudflared"],
