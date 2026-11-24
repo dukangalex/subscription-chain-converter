@@ -2599,7 +2599,8 @@ h1{font-size:31px;font-weight:800;letter-spacing:.05em;text-align:center;margin:
 label{display:block;margin:16px 0 6px;color:#c3d2d0;font-size:14px}
 label:first-of-type{margin-top:4px}
 select,textarea,input{width:100%;padding:10px;border-radius:8px;border:1px solid #31424a;background:#11181b;color:#eef6f5;font-size:15px}
-select:focus,textarea:focus,input:focus{outline:2px solid #14b8a6;border-color:#14b8a6}
+select,textarea,input{transition:box-shadow .3s ease,border-color .3s ease}
+select:focus,textarea:focus,input:focus{outline:none;border-color:#14b8a6;box-shadow:0 0 0 1.5px #14b8a6,0 0 0 6px rgba(20,184,166,.15)}
 textarea{resize:vertical;font-family:inherit;line-height:1.5}
 .ta-wrap{position:relative}
 .clear{position:absolute;top:6px;right:6px;padding:3px 10px;border:1px solid #31424a;border-radius:6px;background:#162024;color:#a3bab5;font-size:12px;cursor:pointer}
@@ -2615,6 +2616,35 @@ textarea{resize:vertical;font-family:inherit;line-height:1.5}
 .link-row .ops button,.link-row .ops a{flex:1;padding:9px;border:0;border-radius:8px;background:#1b272c;color:#eef6f5;font-size:14px;text-align:center;text-decoration:none;cursor:pointer}
 .link-row .ops a.imp{background:linear-gradient(135deg,#14b8a6,#2563eb);color:#fff}
 .note{color:#a3bab5;font-size:13px;margin-top:10px;line-height:1.6}
+/* Lucian UX/UI Prompt #008, #244, #434, #438 · MIT License */
+@keyframes ux-shake{15%,85%{transform:translateX(-2px)}30%,70%{transform:translateX(5px)}45%,55%{transform:translateX(-7px)}}
+.is-bad{box-shadow:0 0 0 1.5px #ef4444,0 0 0 6px rgba(239,68,68,.14)!important;border-color:#ef4444!important;animation:ux-shake .45s cubic-bezier(.36,.07,.19,.97)}
+#secN.is-busy textarea,#secN.is-busy select,#secN.is-busy input,#secC.is-busy textarea,#secC.is-busy select,#secC.is-busy input{opacity:.55;pointer-events:none}
+.go{position:relative}
+.go .go-l{display:block;transition:opacity .22s ease,filter .22s ease,transform .3s ease}
+.go[data-s="busy"] .go-l,.go[data-s="ok"] .go-l{opacity:0;filter:blur(4px);transform:scale(.92)}
+.go-sp{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2.5px solid rgba(255,255,255,.28);border-top-color:#fff;opacity:0;pointer-events:none;animation:ux-spin .75s linear infinite;transition:opacity .2s ease}
+@keyframes ux-spin{to{transform:rotate(360deg)}}
+.go[data-s="busy"] .go-sp{opacity:1;transition-delay:.15s}
+.go-ck{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;fill:none;stroke:#fff;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.4);pointer-events:none;transition:opacity .2s ease,transform .4s cubic-bezier(.34,1.6,.5,1)}
+.go-ck path{stroke-dasharray:20;stroke-dashoffset:20;transition:stroke-dashoffset .38s ease .12s}
+.go[data-s="ok"]{background:#10b981;animation:ux-pop .5s cubic-bezier(.34,1.7,.5,1)}
+@keyframes ux-pop{40%{transform:scale(1.03)}}
+.go[data-s="ok"] .go-ck{opacity:1;transform:none}
+.go[data-s="ok"] .go-ck path{stroke-dashoffset:0}
+.go-ring{position:absolute;inset:0;border-radius:inherit;box-shadow:0 0 0 2px #10b981;opacity:0;pointer-events:none}
+.go[data-s="ok"] .go-ring{animation:ux-ring .7s ease .1s}
+@keyframes ux-ring{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
+.link-row .ops button.cp{display:flex;align-items:center;justify-content:center;gap:6px}
+.cp-ic{position:relative;width:16px;height:16px;flex:none}
+.cp-ic svg{position:absolute;inset:0;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;transition:opacity .25s ease,transform .5s cubic-bezier(.34,1.45,.64,1)}
+.cp-ic .cp-ok{opacity:0;transform:scale(.4) rotate(-30deg)}
+.cp-ic .cp-ok path{stroke-width:2.6;stroke-dasharray:22;stroke-dashoffset:22;transition:stroke-dashoffset .4s ease .1s}
+button.cp.is-copied{background:rgba(16,185,129,.22)!important;color:#4ade80!important}
+button.cp.is-copied .cp-i{opacity:0;transform:scale(.4) rotate(30deg)}
+button.cp.is-copied .cp-ok{opacity:1;transform:none}
+button.cp.is-copied .cp-ok path{stroke-dashoffset:0}
+@media (prefers-reduced-motion: reduce){.is-bad,.go[data-s="ok"],.go[data-s="ok"] .go-ring{animation:none}.go-sp{animation-duration:1.4s}}
 .hide{display:none}
 footer{color:#5d726d;font-size:13px;margin-top:24px;line-height:1.6}
 footer a{color:#5eead4}
@@ -2671,7 +2701,7 @@ footer a{color:#5eead4}
 <input id="codeN" placeholder="如 home，只用字母、数字、-、_">
 <label>订阅名（可选，导入客户端时显示的名字）</label>
 <input id="nameN" placeholder="如 UR丹佛">
-<button class="go" id="goN" onclick="genN()">生成转换链接</button>
+<button class="go" id="goN" data-s="idle" onclick="genN()"><span class="go-l">生成转换链接</span><i class="go-sp" aria-hidden="true"></i><svg class="go-ck" viewBox="0 0 24 24" aria-hidden="true"><path d="m5.5 12.5 4.5 4.5 8.5-9.5"/></svg><i class="go-ring" aria-hidden="true"></i></button>
 <div class="err" id="errN"></div>
 <div class="out" id="outN"></div>
 </div>
@@ -2693,13 +2723,13 @@ footer a{color:#5eead4}
 <input id="codeC" placeholder="如 chain，只用字母、数字、-、_">
 <label>订阅名（可选，导入客户端时显示的名字）</label>
 <input id="nameC" placeholder="如 UR丹佛">
-<button class="go" id="goC" onclick="genC()">生成链式订阅链接</button>
+<button class="go" id="goC" data-s="idle" onclick="genC()"><span class="go-l">生成链式订阅链接</span><i class="go-sp" aria-hidden="true"></i><svg class="go-ck" viewBox="0 0 24 24" aria-hidden="true"><path d="m5.5 12.5 4.5 4.5 8.5-9.5"/></svg><i class="go-ring" aria-hidden="true"></i></button>
 <div class="err" id="errC"></div>
 <div class="out" id="outC"></div>
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.6 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.7 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -2730,7 +2760,7 @@ function extractCode(s){
 function restore(){
   var code=extractCode($("rcode").value);
   $("rerr").style.display="none";$("rok").style.display="none";
-  if(!code){$("rerr").style.display="block";return}
+  if(!code){$("rerr").style.display="block";flagField($("rcode"),true);return}
   fetch("/api/link/"+encodeURIComponent(code)).then(function(r){
     if(!r.ok) throw new Error("nf");
     return r.json();
@@ -2751,11 +2781,11 @@ function restore(){
     }
     $("rok").style.display="block";
   }).catch(function(){
-    $("rerr").style.display="block";
+    $("rerr").style.display="block";flagField($("rcode"),true);
   });
 }
 function copyText(btn,txt){
-  function done(){var o=btn.textContent;btn.textContent="已复制";setTimeout(function(){btn.textContent=o},1200)}
+  function done(){btn.classList.add("is-copied");var tx=btn.querySelector(".cp-tx");if(tx)tx.textContent="已复制";setTimeout(function(){btn.classList.remove("is-copied");if(tx)tx.textContent="复制链接"},1800)}
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(txt).then(done).catch(function(){fallback()});
   }else{fallback()}
@@ -2771,7 +2801,7 @@ function linkRow(tag,url,imp){
   var t=document.createElement("div");t.className="tag";t.textContent=tag;row.appendChild(t);
   var u=document.createElement("div");u.className="u";u.textContent=url;row.appendChild(u);
   var ops=document.createElement("div");ops.className="ops";
-  var cp=document.createElement("button");cp.textContent="复制链接";
+  var cp=document.createElement("button");cp.className="cp";cp.innerHTML="<span class=\"cp-ic\"><svg class=\"cp-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"8.5\" y=\"8.5\" width=\"11\" height=\"11\" rx=\"2.5\"/><path d=\"M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2\"/></svg><svg class=\"cp-ok\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5.5 12.5l4.2 4.2L18.5 8\"/></svg></span><span class=\"cp-tx\">复制链接</span>";
   cp.onclick=function(){copyText(cp,url)};
   ops.appendChild(cp);
   var op=document.createElement("button");op.textContent="打开链接";
@@ -2828,15 +2858,25 @@ function askOverwrite(sec,code,retry,codeInputId){
   ops.appendChild(b1);ops.appendChild(b2);box.appendChild(ops);out.appendChild(box);out.style.display="block";
   fetch("/api/link/"+encodeURIComponent(code)).then(function(r){return r.ok?r.json():null}).then(function(rec){u.textContent=describeOld(code,rec)}).catch(function(){u.textContent=describeOld(code,null)});
 }
+var RM=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function goState(btn,s){btn.dataset.s=s;if(s==="busy"){btn.setAttribute("aria-busy","true")}else{btn.removeAttribute("aria-busy")}}
+function flagField(el,jump){
+  if(!el)return;
+  el.classList.remove("is-bad");void el.offsetWidth;el.classList.add("is-bad");
+  if(jump){el.scrollIntoView({behavior:RM?"auto":"smooth",block:"center"});
+  setTimeout(function(){try{el.focus({preventScroll:true})}catch(e){el.focus()}},RM?0:280)}
+  el.addEventListener("input",function h(){el.classList.remove("is-bad");el.removeEventListener("input",h)});
+}
+function clearFlags(sec){Array.prototype.forEach.call(sec.querySelectorAll(".is-bad"),function(x){x.classList.remove("is-bad")})}
 function genN(){attemptN(false)}
 function attemptN(force){
-  var it=itemsOf("u");hideErr("errN");
-  if(!it.length){showErr("errN","先粘贴节点或订阅链接");return}
+  var it=itemsOf("u");hideErr("errN");clearFlags($("secN"));
+  if(!it.length){showErr("errN","先粘贴节点或订阅链接");flagField($("u"),true);return}
   var tg=$("t").value, cd=$("codeN").value.trim(), nm=$("nameN").value.trim();
   var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm;
-  var btn=$("goN");btn.disabled=true;btn.textContent="生成中…";
+  var btn=$("goN");btn.disabled=true;goState(btn,"busy");$("secN").classList.add("is-busy");
   shorten(body).then(function(res){
-    if(res.ok){
+    if(res.ok){goState(btn,"ok");
       var url=res.text.trim(), code=extractCode(url);
       if(code){
         var rows=[
@@ -2853,7 +2893,7 @@ function attemptN(force){
         render("outN",[{tag:"订阅链接",url:url}],force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容":"");
       }
     }else if(cd){
-      if(res.status===409&&!force){askOverwrite("N",cd,function(){attemptN(true)},"codeN")}else{showErr("errN",res.text||"生成失败")}
+      if(res.status===409&&!force){askOverwrite("N",cd,function(){attemptN(true)},"codeN")}else{showErr("errN",res.text||"生成失败");if(cd&&res.status===400)flagField($("codeN"),true)}
     }else{
       var base=(tg==="clash"||tg==="singbox")?"/conv":"/sub";
       var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
@@ -2866,17 +2906,20 @@ function attemptN(force){
       var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
       render("outN",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
-  }).finally(function(){btn.disabled=false;btn.textContent="生成转换链接"});
+  }).finally(function(){
+    if(btn.dataset.s==="ok"){setTimeout(function(){goState(btn,"idle");btn.disabled=false;$("secN").classList.remove("is-busy")},RM?350:1000)}
+    else{goState(btn,"idle");btn.disabled=false;$("secN").classList.remove("is-busy")}
+  });
 }
 function genC(){attemptC(false)}
 function attemptC(force){
-  var a=itemsOf("ein"), b=itemsOf("eout");hideErr("errC");
-  if(!a.length||!b.length){showErr("errC","入口和出口都要填");return}
+  var a=itemsOf("ein"), b=itemsOf("eout");hideErr("errC");clearFlags($("secC"));
+  if(!a.length||!b.length){showErr("errC","入口和出口都要填");if(!a.length)flagField($("ein"),true);else if(!b.length)flagField($("eout"),true);if(!a.length&&!b.length)flagField($("eout"),false);return}
   var tg=$("tc").value, cd=$("codeC").value.trim(), nm=$("nameC").value.trim();
   var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm;
-  var btn=$("goC");btn.disabled=true;btn.textContent="生成中…";
+  var btn=$("goC");btn.disabled=true;goState(btn,"busy");$("secC").classList.add("is-busy");
   shorten(body).then(function(res){
-    if(res.ok){
+    if(res.ok){goState(btn,"ok");
       var url=res.text.trim(), code=extractCode(url);
       if(code){
         var rows=[
@@ -2892,7 +2935,7 @@ function attemptC(force){
         render("outC",[{tag:"订阅链接",url:url}],force?"已用原后缀更新：订阅地址没有变，客户端下次更新就会拿到新内容":"");
       }
     }else if(cd){
-      if(res.status===409&&!force){askOverwrite("C",cd,function(){attemptC(true)},"codeC")}else{showErr("errC",res.text||"生成失败")}
+      if(res.status===409&&!force){askOverwrite("C",cd,function(){attemptC(true)},"codeC")}else{showErr("errC",res.text||"生成失败");if(cd&&res.status===400)flagField($("codeC"),true)}
     }else{
       var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
       render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
@@ -2903,14 +2946,17 @@ function attemptC(force){
       var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
       render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
-  }).finally(function(){btn.disabled=false;btn.textContent="生成链式订阅链接"});
+  }).finally(function(){
+    if(btn.dataset.s==="ok"){setTimeout(function(){goState(btn,"idle");btn.disabled=false;$("secC").classList.remove("is-busy")},RM?350:1000)}
+    else{goState(btn,"idle");btn.disabled=false;$("secC").classList.remove("is-busy")}
+  });
 }
 
 // Update check: compare the version published in the repo's VERSION
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.3.6";
+  var CURVER="1.3.7";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
