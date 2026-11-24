@@ -76,7 +76,12 @@ DECLARED = None  # lazily filled by main()
 
 def _valid(dst, data, src=""):
     if len(data) < 64:
-        return False
+        # sing-box rule-sets are self-describing: a valid SRS magic
+        # header outweighs the size floor (tiny categories such as
+        # geosite-threads legitimately shrink below 64 bytes).
+        if not (dst.endswith(".srs") and len(data) >= 8
+                and data[:3] == b"SRS"):
+            return False
     if dst.endswith(".svg"):
         head = data[:2048]
         return b"<svg" in head or head.lstrip().startswith(b"<?xml")
