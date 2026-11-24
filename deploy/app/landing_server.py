@@ -919,7 +919,12 @@ def _prepare_plain_nodes(nodes):
     return kept, rename_map
 
 
-def build_config(target, items):
+def build_config(target, items, origin=None):
+    body, ctype = _build_config_impl(target, items)
+    return _materialize(body, origin), ctype
+
+
+def _build_config_impl(target, items):
     nodes = gather(items)
     if not nodes:
         raise ValueError("没有可用节点")
@@ -1562,6 +1567,16 @@ def _skeleton(name):
     return copy.deepcopy(_SKELETON_CACHE[name])
 
 
+def _materialize(body, origin):
+    """Fill the __PUBLIC_ORIGIN__ placeholder carried by the skeletons
+    and the clash base with the origin this service is reached under,
+    so generated rule-provider URLs point at this service's own
+    /rules/ mirror. Without an origin the body passes through."""
+    if origin and isinstance(body, str) and "__PUBLIC_ORIGIN__" in body:
+        return body.replace("__PUBLIC_ORIGIN__", origin)
+    return body
+
+
 def _manifest_dsts():
     global _MANIFEST_CACHE
     if _MANIFEST_CACHE is None:
@@ -1622,10 +1637,13 @@ def _sb_leaf_fix(o):
     return o
 
 
-def _own_clash_chain(eprox, xprox):
+def _own_clash_chain(eprox, xprox, origin=None):
     try:
         import yaml
         sk = _skeleton("skeleton_clash.json")
+        if origin:
+            sk = json.loads(_materialize(
+                json.dumps(sk, ensure_ascii=False), origin))
         entries, exits = [], []
         for p in eprox:
             p = dict(p)
@@ -1650,9 +1668,12 @@ def _own_clash_chain(eprox, xprox):
         return None
 
 
-def _own_singbox_chain(enodes, xnodes):
+def _own_singbox_chain(enodes, xnodes, origin=None):
     try:
         sk = _skeleton("skeleton_singbox.json")
+        if origin:
+            sk = json.loads(_materialize(
+                json.dumps(sk, ensure_ascii=False), origin))
         entries, exits = [], []
         for o in enodes:
             o = _sb_leaf_fix(dict(o))
@@ -1841,7 +1862,12 @@ def _finish_chain_singbox(body):
         print("chain mark pass (singbox) failed:", e, flush=True)
     return body
 
-def merge_singbox(entry_items, exit_items):
+def merge_singbox(entry_items, exit_items, origin=None):
+    body, ctype = _merge_singbox_impl(entry_items, exit_items, origin)
+    return _materialize(body, origin), ctype
+
+
+def _merge_singbox_impl(entry_items, exit_items, origin=None):
     STAGE["cur"] = "entry-convert"
     ecfg = json.loads(sub_convert("singbox", entry_items))
     STAGE["cur"] = "exit-convert"
@@ -1850,7 +1876,7 @@ def merge_singbox(entry_items, exit_items):
     enodes, xnodes = _nodes(ecfg), _nodes(xcfg)
     if not enodes or not xnodes:
         raise ValueError("入口或出口没有可用节点")
-    built = _own_singbox_chain(enodes, xnodes)
+    built = _own_singbox_chain(enodes, xnodes, origin)
     if built is not None:
         print("chain target=singbox path=own", flush=True)
         return _ech_fix_body(_finish_chain_singbox(built[0])), built[1]
@@ -2292,7 +2318,12 @@ def _plain_text_local(target, items):
     return (r.stdout, "text/plain; charset=utf-8")
 
 
-def merge_clash(entry_items, exit_items):
+def merge_clash(entry_items, exit_items, origin=None):
+    body, ctype = _merge_clash_impl(entry_items, exit_items, origin)
+    return _materialize(body, origin), ctype
+
+
+def _merge_clash_impl(entry_items, exit_items, origin=None):
     import yaml
     STAGE["cur"] = "entry-convert"
     ey = yaml.safe_load(sub_convert("clash", entry_items))
@@ -2313,7 +2344,7 @@ def merge_clash(entry_items, exit_items):
              if str(p.get("type") or "").lower() not in ("direct", "reject")]
     if not eprox or not xprox:
         raise ValueError("入口或出口没有可用节点")
-    built = _own_clash_chain(eprox, xprox)
+    built = _own_clash_chain(eprox, xprox, origin)
     if built is not None:
         print("chain target=clash path=own", flush=True)
         return (_finish_chain_clash(built[0]), built[1])
@@ -2729,7 +2760,7 @@ footer a{color:#5eead4}
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.7 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.8 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -2956,7 +2987,7 @@ function attemptC(force){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.3.7";
+  var CURVER="1.3.8";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
@@ -3064,6 +3095,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
+        _host = self.headers.get("Host") or ""
+        origin = ("https://" + _host) if _host else None
         if u.path in ("/", "/index.html"):
             return self._send(200, PAGE, "text/html; charset=utf-8")
         if u.path.startswith("/api/link/"):
@@ -3115,10 +3148,10 @@ class H(BaseHTTPRequestHandler):
                 try:
                     if want == "singbox":
                         body, ctype = merge_singbox(
-                            rec["entry"], rec["exit"])
+                            rec["entry"], rec["exit"], origin)
                     elif want == "clash":
                         body, ctype = merge_clash(
-                            rec["entry"], rec["exit"])
+                            rec["entry"], rec["exit"], origin)
                     else:
                         body, ctype = merge_text_chain(
                             want, rec["entry"], rec["exit"])
@@ -3135,7 +3168,7 @@ class H(BaseHTTPRequestHandler):
             items = rec.get("url") or ""
             if target in ("singbox", "clash") and items:
                 try:
-                    body, ctype = build_config(target, items)
+                    body, ctype = build_config(target, items, origin)
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
                 return self._send(200, body, ctype,
@@ -3178,7 +3211,7 @@ class H(BaseHTTPRequestHandler):
             sub_name = _clean_sub_name((qs.get("name") or [""])[0])
             if target in ("singbox", "clash") and items:
                 try:
-                    body, ctype = build_config(target, items)
+                    body, ctype = build_config(target, items, origin)
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
                 return self._send(200, body, ctype, name=sub_name)
@@ -3211,7 +3244,7 @@ class H(BaseHTTPRequestHandler):
             if target not in ("singbox", "clash") or not items:
                 return self._send(400, "bad request")
             try:
-                body, ctype = build_config(target, items)
+                body, ctype = build_config(target, items, origin)
             except Exception as e:
                 import sys
                 print(f"conv error target={target} err={e!r}",
@@ -3229,9 +3262,9 @@ class H(BaseHTTPRequestHandler):
             STAGE["cur"] = "start"
             try:
                 if target == "singbox":
-                    body, ctype = merge_singbox(entry, exit_)
+                    body, ctype = merge_singbox(entry, exit_, origin)
                 elif target == "clash":
-                    body, ctype = merge_clash(entry, exit_)
+                    body, ctype = merge_clash(entry, exit_, origin)
                 else:
                     body, ctype = merge_text_chain(target, entry, exit_)
             except Exception as e:
