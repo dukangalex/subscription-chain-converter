@@ -1752,9 +1752,16 @@ def _mark_chain_groups_clash(cfg):
             g.update(chain_params)
             if all(m in entries for m in mem):
                 # Entry-pool groups check one hop (small jitter):
-                # switch to a clearly faster entry sooner. Exit-pool
-                # groups keep tolerance 100 — two-hop jitter would
-                # flap them (2026-10-29 tuning note).
+                # switch to a clearly faster entry sooner.
+                g["tolerance"] = 50
+            else:
+                # Exit-pool groups (2026-11-25): the 2026-10-29
+                # anti-flap caution (tolerance 100) is superseded
+                # by an AngelaMihomo field test on the official
+                # kernel — a black-hole exit (connects, never
+                # answers) took ~35s to swap out at 20s/100 and
+                # ~21s at 15s/50, traffic recovering ~28s in.
+                g["interval"] = 15
                 g["tolerance"] = 50
         if g.get("name") == "\u9ed8\u8ba4\u4ee3\u7406" \
                 and EXIT_AUTO in (g.get("proxies") or []):
@@ -1827,9 +1834,14 @@ def _mark_chain_groups_singbox(cfg):
         if (o.get("type") == "urltest" and mem
                 and (all(m in exits for m in mem)
                      or all(m in entries for m in mem))):
-            o["interval"] = "20s"
-            o["tolerance"] = (50 if all(m in entries for m in mem)
-                              else 100)
+            if all(m in entries for m in mem):
+                o["interval"] = "20s"
+                o["tolerance"] = 50
+            else:
+                # Exit pool: 15s/50, see _mark_chain_groups_clash
+                # (2026-11-25 field test).
+                o["interval"] = "15s"
+                o["tolerance"] = 50
         if o.get("tag") == "\u9ed8\u8ba4\u4ee3\u7406" \
                 and EXIT_AUTO in (o.get("outbounds") or []):
             rest = [m for m in o["outbounds"] if m != EXIT_AUTO]
@@ -2799,7 +2811,7 @@ footer a{color:#5eead4}
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.9 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.10 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -3029,7 +3041,7 @@ function attemptC(force){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.3.9";
+  var CURVER="1.3.10";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
