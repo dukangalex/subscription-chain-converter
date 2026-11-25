@@ -2486,6 +2486,41 @@ def _name_headers(name):
         name.encode("utf-8")).decode("ascii")
     return disp, title
 
+def _clean_traffic(raw):
+    """Parse a user-typed traffic amount ("100", "100G", "1.5TB",
+    "500M") into total bytes. Bare numbers are GB; decimal units.
+    Returns 0 when unparseable or not positive."""
+    if raw is None:
+        return 0
+    s = str(raw).strip().upper().replace(",", "").replace(" ", "")
+    if not s:
+        return 0
+    mult = 1000 ** 3
+    for suf, m in (("TB", 1000 ** 4), ("T", 1000 ** 4),
+                   ("GB", 1000 ** 3), ("G", 1000 ** 3),
+                   ("MB", 1000 ** 2), ("M", 1000 ** 2),
+                   ("KB", 1000), ("K", 1000), ("B", 1)):
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+            mult = m
+            break
+    try:
+        v = float(s)
+    except ValueError:
+        return 0
+    if v <= 0:
+        return 0
+    return int(v * mult)
+
+
+def _userinfo_header(total_bytes):
+    """subscription-userinfo header value for a stored traffic
+    total; clients render it as the plan's traffic quota."""
+    if not total_bytes:
+        return None
+    return f"upload=0; download=0; total={int(total_bytes)}"
+
+
 
 def _same_payload(a, b):
     return (isinstance(a, dict) and isinstance(b, dict)
@@ -2732,6 +2767,8 @@ footer a{color:#5eead4}
 <input id="codeN" placeholder="如 home，只用字母、数字、-、_">
 <label>订阅名（可选，导入客户端时显示的名字）</label>
 <input id="nameN" placeholder="如 UR丹佛">
+<label>流量（可选，填总量，客户端里会显示额度）</label>
+<input id="trafficN" placeholder="如 100G、1TB、500M，不填单位按 GB">
 <button class="go" id="goN" data-s="idle" onclick="genN()"><span class="go-l">生成转换链接</span><i class="go-sp" aria-hidden="true"></i><svg class="go-ck" viewBox="0 0 24 24" aria-hidden="true"><path d="m5.5 12.5 4.5 4.5 8.5-9.5"/></svg><i class="go-ring" aria-hidden="true"></i></button>
 <div class="err" id="errN"></div>
 <div class="out" id="outN"></div>
@@ -2754,13 +2791,15 @@ footer a{color:#5eead4}
 <input id="codeC" placeholder="如 chain，只用字母、数字、-、_">
 <label>订阅名（可选，导入客户端时显示的名字）</label>
 <input id="nameC" placeholder="如 UR丹佛">
+<label>流量（可选，填总量，客户端里会显示额度）</label>
+<input id="trafficC" placeholder="如 100G、1TB、500M，不填单位按 GB">
 <button class="go" id="goC" data-s="idle" onclick="genC()"><span class="go-l">生成链式订阅链接</span><i class="go-sp" aria-hidden="true"></i><svg class="go-ck" viewBox="0 0 24 24" aria-hidden="true"><path d="m5.5 12.5 4.5 4.5 8.5-9.5"/></svg><i class="go-ring" aria-hidden="true"></i></button>
 <div class="err" id="errC"></div>
 <div class="out" id="outC"></div>
 <p class="note">生成的链接可直接当订阅地址填进客户端，每次更新都会重新按入口到出口串好。短链里的字母代表格式：/m/ Mihomo、/s/ sing-box、/v/ V2Ray、/g/ Surge、/l/ Loon、/q/ Quantumult X，同一个码改字母就能切换格式，不用重新生成；/c/ 是自适应链接：按来取订阅的客户端自动出对应格式，认不出时按生成时选的格式出。</p>
 </div>
 
-<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.8 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
+<footer>这是 VPS端：运行在你自己的 VPS 上，订阅内容只保存在这台服务器，不经过任何第三方。<br>v1.3.9 · 仓库 <a href="https://github.com/dukangalex/subscription-chain-converter" target="_blank" rel="noopener">GitHub</a> · 频道 <a href="https://t.me/AngelaNexus" target="_blank" rel="noopener">Telegram @AngelaNexus</a></footer>
 </div>
 <script>
 function $(id){return document.getElementById(id)}
@@ -2788,6 +2827,7 @@ function extractCode(s){
   var parts=s.split("/").filter(function(p){return p.length>0});
   return parts.length?parts[parts.length-1]:"";
 }
+function fmtTraffic(b){var u=["B","KB","MB","GB","TB"],i=0;b=+b||0;while(b>=1000&&i<4){b/=1000;i++}return (Math.round(b*10)/10)+u[i]}
 function restore(){
   var code=extractCode($("rcode").value);
   $("rerr").style.display="none";$("rok").style.display="none";
@@ -2803,12 +2843,14 @@ function restore(){
       if(rec.target) $("tc").value=rec.target;
       $("codeC").value=code;
       if(rec.name) $("nameC").value=rec.name;
+      if(rec.traffic) $("trafficC").value=fmtTraffic(rec.traffic);
     }else{
       mode("n");
       $("u").value=(rec.url||"").split("|").join("\n");
       if(rec.target) $("t").value=rec.target;
       $("codeN").value=code;
       if(rec.name) $("nameN").value=rec.name;
+      if(rec.traffic) $("trafficN").value=fmtTraffic(rec.traffic);
     }
     $("rok").style.display="block";
   }).catch(function(){
@@ -2903,8 +2945,8 @@ function genN(){attemptN(false)}
 function attemptN(force){
   var it=itemsOf("u");hideErr("errN");clearFlags($("secN"));
   if(!it.length){showErr("errN","先粘贴节点或订阅链接");flagField($("u"),true);return}
-  var tg=$("t").value, cd=$("codeN").value.trim(), nm=$("nameN").value.trim();
-  var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm;
+  var tg=$("t").value, cd=$("codeN").value.trim(), nm=$("nameN").value.trim(), tf=$("trafficN").value.trim();
+  var body={target:tg,url:it.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm; if(tf)body.traffic=tf;
   var btn=$("goN");btn.disabled=true;goState(btn,"busy");$("secN").classList.add("is-busy");
   shorten(body).then(function(res){
     if(res.ok){goState(btn,"ok");
@@ -2927,14 +2969,14 @@ function attemptN(force){
       if(res.status===409&&!force){askOverwrite("N",cd,function(){attemptN(true)},"codeN")}else{showErr("errN",res.text||"生成失败");if(cd&&res.status===400)flagField($("codeN"),true)}
     }else{
       var base=(tg==="clash"||tg==="singbox")?"/conv":"/sub";
-      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
+      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"")+(tf?"&traffic="+encodeURIComponent(tf):"");
       render("outN",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).catch(function(){
     if(cd){showErr("errN","生成失败，请稍后再试")}
     else{
       var base=(tg==="clash"||tg==="singbox")?"/conv":"/sub";
-      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
+      var u2=location.origin+base+"?target="+tg+"&url="+encodeURIComponent(it.join("|"))+(nm?"&name="+encodeURIComponent(nm):"")+(tf?"&traffic="+encodeURIComponent(tf):"");
       render("outN",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).finally(function(){
@@ -2946,8 +2988,8 @@ function genC(){attemptC(false)}
 function attemptC(force){
   var a=itemsOf("ein"), b=itemsOf("eout");hideErr("errC");clearFlags($("secC"));
   if(!a.length||!b.length){showErr("errC","入口和出口都要填");if(!a.length)flagField($("ein"),true);else if(!b.length)flagField($("eout"),true);if(!a.length&&!b.length)flagField($("eout"),false);return}
-  var tg=$("tc").value, cd=$("codeC").value.trim(), nm=$("nameC").value.trim();
-  var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm;
+  var tg=$("tc").value, cd=$("codeC").value.trim(), nm=$("nameC").value.trim(), tf=$("trafficC").value.trim();
+  var body={target:tg,entry:a.join("|"),exit:b.join("|")}; if(cd)body.code=cd; if(force)body.force=true; if(nm)body.name=nm; if(tf)body.traffic=tf;
   var btn=$("goC");btn.disabled=true;goState(btn,"busy");$("secC").classList.add("is-busy");
   shorten(body).then(function(res){
     if(res.ok){goState(btn,"ok");
@@ -2968,13 +3010,13 @@ function attemptC(force){
     }else if(cd){
       if(res.status===409&&!force){askOverwrite("C",cd,function(){attemptC(true)},"codeC")}else{showErr("errC",res.text||"生成失败");if(cd&&res.status===400)flagField($("codeC"),true)}
     }else{
-      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
+      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"")+(tf?"&traffic="+encodeURIComponent(tf):"");
       render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).catch(function(){
     if(cd){showErr("errC","生成失败，请稍后再试")}
     else{
-      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"");
+      var u2=location.origin+"/chain?target="+tg+"&entry="+encodeURIComponent(a.join("|"))+"&exit="+encodeURIComponent(b.join("|"))+(nm?"&name="+encodeURIComponent(nm):"")+(tf?"&traffic="+encodeURIComponent(tf):"");
       render("outC",[{tag:"订阅链接（长链接）",url:u2}],"短链服务暂不可用，已生成长链接");
     }
   }).finally(function(){
@@ -2987,7 +3029,7 @@ function attemptC(force){
 // file with the one built into this page; prompt only when newer.
 // The result is cached for a day; dismissing hides that version.
 (function(){
-  var CURVER="1.3.8";
+  var CURVER="1.3.9";
   var REPO="https://github.com/dukangalex/subscription-chain-converter";
   var KEY="conv_update_check";
   function ver(s){return String(s||"").trim().replace(/^v/,"").split(".").map(function(x){return parseInt(x,10)||0})}
@@ -3027,7 +3069,7 @@ class H(BaseHTTPRequestHandler):
         pass
 
     def _send(self, code, body, ctype="text/plain; charset=utf-8",
-              name=None):
+              name=None, userinfo=None):
         if isinstance(body, str):
             body = body.encode("utf-8")
         self.send_response(code)
@@ -3037,6 +3079,8 @@ class H(BaseHTTPRequestHandler):
         if disp:
             self.send_header("Content-Disposition", disp)
             self.send_header("profile-title", title)
+        if userinfo:
+            self.send_header("subscription-userinfo", userinfo)
         # Browser-based converter frontends call this backend cross-origin.
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
@@ -3082,6 +3126,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, "bad request")
             if sub_name:
                 record["name"] = sub_name
+            traffic = _clean_traffic(data.get("traffic"))
+            if traffic:
+                record["traffic"] = traffic
             code = _store_link(record, want or None,
                                data.get("force") is True)
             if code is None:
@@ -3163,7 +3210,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(
                         502, f"chain generate failed at {STAGE['cur']}: {e}")
                 return self._send(200, body, ctype,
-                                  name=rec.get("name"))
+                                  name=rec.get("name"), userinfo=_userinfo_header(rec.get("traffic")))
             target = want
             items = rec.get("url") or ""
             if target in ("singbox", "clash") and items:
@@ -3172,7 +3219,7 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
                 return self._send(200, body, ctype,
-                                  name=rec.get("name"))
+                                  name=rec.get("name"), userinfo=_userinfo_header(rec.get("traffic")))
             if items:
                 try:
                     local = _plain_text_local(target, items)
@@ -3180,7 +3227,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(502, f"convert failed: {e}")
                 if local:
                     return self._send(200, local[0], local[1],
-                                      name=rec.get("name"))
+                                      name=rec.get("name"), userinfo=_userinfo_header(rec.get("traffic")))
             try:
                 q = urllib.parse.urlencode({"target": target, "url": items})
                 req = urllib.request.Request(
@@ -3190,7 +3237,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(r.status, r.read(),
                                       r.headers.get("Content-Type",
                                                     "text/plain"),
-                                      name=rec.get("name"))
+                                      name=rec.get("name"), userinfo=_userinfo_header(rec.get("traffic")))
             except urllib.error.HTTPError as e:
                 return self._send(e.code, e.read())
             except Exception as e:
@@ -3209,12 +3256,13 @@ class H(BaseHTTPRequestHandler):
             target = (qs.get("target") or [""])[0]
             items = (qs.get("url") or [""])[0]
             sub_name = _clean_sub_name((qs.get("name") or [""])[0])
+            sub_traffic = _clean_traffic((qs.get("traffic") or [""])[0])
             if target in ("singbox", "clash") and items:
                 try:
                     body, ctype = build_config(target, items, origin)
                 except Exception as e:
                     return self._send(502, f"convert failed: {e}")
-                return self._send(200, body, ctype, name=sub_name)
+                return self._send(200, body, ctype, name=sub_name, userinfo=_userinfo_header(sub_traffic))
             if items:
                 try:
                     local = _plain_text_local(target, items)
@@ -3222,7 +3270,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(502, f"convert failed: {e}")
                 if local:
                     return self._send(200, local[0], local[1],
-                                      name=sub_name)
+                                      name=sub_name, userinfo=_userinfo_header(sub_traffic))
             try:
                 req = urllib.request.Request(
                     CONVERTER_BASE + self.path,
@@ -3241,6 +3289,7 @@ class H(BaseHTTPRequestHandler):
             target = (qs.get("target") or [""])[0]
             items = (qs.get("url") or [""])[0]
             sub_name = _clean_sub_name((qs.get("name") or [""])[0])
+            sub_traffic = _clean_traffic((qs.get("traffic") or [""])[0])
             if target not in ("singbox", "clash") or not items:
                 return self._send(400, "bad request")
             try:
@@ -3250,13 +3299,14 @@ class H(BaseHTTPRequestHandler):
                 print(f"conv error target={target} err={e!r}",
                       file=sys.stderr, flush=True)
                 return self._send(502, f"convert failed: {e}")
-            return self._send(200, body, ctype, name=sub_name)
+            return self._send(200, body, ctype, name=sub_name, userinfo=_userinfo_header(sub_traffic))
         if u.path == "/chain":
             qs = urllib.parse.parse_qs(u.query)
             target = (qs.get("target") or [""])[0]
             entry = (qs.get("entry") or [""])[0]
             exit_ = (qs.get("exit") or [""])[0]
             sub_name = _clean_sub_name((qs.get("name") or [""])[0])
+            sub_traffic = _clean_traffic((qs.get("traffic") or [""])[0])
             if target not in _CHAIN_TARGETS or not entry or not exit_:
                 return self._send(400, "bad request")
             STAGE["cur"] = "start"
@@ -3272,7 +3322,7 @@ class H(BaseHTTPRequestHandler):
                 print(f"chain error target={target} stage={STAGE['cur']} err={e!r}",
                       file=sys.stderr, flush=True)
                 return self._send(502, f"chain generate failed at {STAGE['cur']}: {e}")
-            return self._send(200, body, ctype, name=sub_name)
+            return self._send(200, body, ctype, name=sub_name, userinfo=_userinfo_header(sub_traffic))
         return self._send(404, "not found")
 
 
