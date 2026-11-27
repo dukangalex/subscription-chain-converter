@@ -1,6 +1,6 @@
 <p align="center"><img src="logo.svg" width="96" alt="Subscription Converter logo"></p>
 
-# Self-Hosted Subscription Converter with Chain Proxy — Implementation Spec
+# Self-Hosted Subscription Converter with Chain Proxy — Implementation Spec（歧舌）
 
 [中文说明](#chinese-edition) · [English](#self-hosted-subscription-converter-with-chain-proxy--implementation-spec)
 
